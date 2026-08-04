@@ -3,3 +3,5 @@ dist
 dist-ssr
 *.local
 *.tsbuildinfo
+.playwright-cli
+output
