@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(xargs grep -l \"TextItem\")",
+      "Bash(npm run *)",
+      "Bash(ls \"$HOME/.claude/skills\" 2>/dev/null || echo \"no skills dir\")",
+      "Bash(mkdir -p \"$HOME/.claude/skills/reflective-instruction-optimization\")"
+    ]
+  }
+}

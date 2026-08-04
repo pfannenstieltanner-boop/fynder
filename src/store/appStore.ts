@@ -1,0 +1,306 @@
+import { create } from 'zustand';
+import type { FileRecord, PageData, SearchMode, SourceSummary, Theme } from '../types';
+import { getFileType } from '../lib/files/fileTypes';
+import { deleteFile } from '../lib/pdf/fileCache';
+import { evictPreviewCaches } from '../lib/previewCaches';
+import { evictFileScan } from '../lib/search/searchFiles';
+import { cancelFileProcessing } from '../lib/processingCancellation';
+
+const PANE_STORAGE_KEY = 'fynder:paneWidths';
+const SIDEBAR_MIN = 170;
+const SIDEBAR_MAX = 640;
+const SIDEBAR_DEFAULT = 250;
+const PREVIEW_MIN = 260;
+const PREVIEW_MAX = 900;
+const PREVIEW_DEFAULT = 400;
+const THEME_STORAGE_KEY = 'fynder:theme';
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function loadPaneWidths(): { sidebarWidth: number; previewWidth: number } {
+  try {
+    const raw = localStorage.getItem(PANE_STORAGE_KEY);
+    if (!raw) throw new Error('no stored value');
+    const parsed = JSON.parse(raw) as { sidebarWidth?: number; previewWidth?: number };
+    return {
+      sidebarWidth: clamp(parsed.sidebarWidth ?? SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_MAX),
+      previewWidth: clamp(parsed.previewWidth ?? PREVIEW_DEFAULT, PREVIEW_MIN, PREVIEW_MAX),
+    };
+  } catch {
+    return { sidebarWidth: SIDEBAR_DEFAULT, previewWidth: PREVIEW_DEFAULT };
+  }
+}
+
+function savePaneWidths(sidebarWidth: number, previewWidth: number): void {
+  try {
+    localStorage.setItem(PANE_STORAGE_KEY, JSON.stringify({ sidebarWidth, previewWidth }));
+  } catch {
+    // localStorage may be unavailable (private browsing, quota) — persistence is a nice-to-have.
+  }
+}
+
+function loadTheme(): Theme {
+  try {
+    const raw = localStorage.getItem(THEME_STORAGE_KEY);
+    if (raw === 'light' || raw === 'dark') return raw;
+  } catch {
+    // localStorage may be unavailable (private browsing) — fall through to the default.
+  }
+  return 'dark';
+}
+
+function applyThemeToDocument(theme: Theme): void {
+  document.documentElement.dataset.theme = theme;
+}
+
+function saveTheme(theme: Theme): void {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch {
+    // localStorage may be unavailable — persistence is a nice-to-have.
+  }
+}
+
+// Applied at module-load time (before the app renders) rather than in a React effect, so the
+// correct theme is in place for the very first paint instead of flashing dark-then-light.
+const initialTheme = loadTheme();
+applyThemeToDocument(initialTheme);
+
+interface AppStore {
+  files: Record<string, FileRecord>;
+  fileOrder: string[];
+  searchQuery: string;
+  searchMode: SearchMode;
+  cumulativeFileCount: number;
+  cumulativeBytes: number;
+  batchWarningDismissed: boolean;
+  sidebarWidth: number;
+  previewWidth: number;
+  theme: Theme;
+  addFiles: (files: File[]) => FileRecord[];
+  removeFile: (fileId: string) => void;
+  setSidebarWidth: (width: number) => void;
+  setPreviewWidth: (width: number) => void;
+  /** Call once at the end of a resize drag — see the setters below. */
+  persistPaneWidths: () => void;
+  setTheme: (theme: Theme) => void;
+  toggleTheme: () => void;
+  dismissBatchWarning: () => void;
+  startProcessing: (fileId: string, pageCount: number) => void;
+  appendPage: (fileId: string, page: PageData) => void;
+  incrementPendingOcr: (fileId: string) => void;
+  decrementPendingOcr: (fileId: string) => void;
+  recordPageFailure: (fileId: string, error: string) => void;
+  markFileDone: (fileId: string) => void;
+  markFileFailed: (fileId: string, error: string) => void;
+  setSearchQuery: (query: string) => void;
+  setSearchMode: (mode: SearchMode) => void;
+  previewTarget: { fileId: string; pageNumber: number; matchIndex: number } | null;
+  openPreview: (fileId: string, pageNumber: number, matchIndex?: number) => void;
+  closePreview: () => void;
+}
+
+function createFileRecord(file: File): FileRecord {
+  return {
+    id: crypto.randomUUID(),
+    name: file.name,
+    size: file.size,
+    // Callers are expected to have already filtered via isSupportedFile(); this fallback
+    // only guards against a FileRecord ever ending up with an invalid fileType.
+    fileType: getFileType(file) ?? 'text',
+    status: 'queued',
+    pageCount: null,
+    pages: [],
+    processedPageCount: 0,
+    pendingOcrCount: 0,
+    failedPageCount: 0,
+    sourceSummary: 'unknown',
+  };
+}
+
+function computeSourceSummary(pages: PageData[]): SourceSummary {
+  if (pages.length === 0) return 'unknown';
+  const hasText = pages.some((p) => p.source === 'text');
+  const hasOcr = pages.some((p) => p.source === 'ocr');
+  if (hasText && hasOcr) return 'mixed';
+  return hasOcr ? 'ocr' : 'text';
+}
+
+function updateFile(
+  files: Record<string, FileRecord>,
+  fileId: string,
+  patch: Partial<FileRecord>,
+): Record<string, FileRecord> {
+  const existing = files[fileId];
+  if (!existing) return files;
+  return { ...files, [fileId]: { ...existing, ...patch } };
+}
+
+const initialPaneWidths = loadPaneWidths();
+
+export const useAppStore = create<AppStore>((set, get) => ({
+  files: {},
+  fileOrder: [],
+  searchQuery: '',
+  searchMode: 'plain',
+  cumulativeFileCount: 0,
+  cumulativeBytes: 0,
+  batchWarningDismissed: false,
+  sidebarWidth: initialPaneWidths.sidebarWidth,
+  previewWidth: initialPaneWidths.previewWidth,
+  theme: initialTheme,
+  previewTarget: null,
+
+  addFiles: (incoming) => {
+    const records = incoming.map(createFileRecord);
+    set((state) => {
+      const files = { ...state.files };
+      for (const record of records) {
+        files[record.id] = record;
+      }
+      return {
+        files,
+        fileOrder: [...state.fileOrder, ...records.map((r) => r.id)],
+        cumulativeFileCount: state.cumulativeFileCount + records.length,
+        cumulativeBytes: state.cumulativeBytes + records.reduce((sum, r) => sum + r.size, 0),
+      };
+    });
+    return records;
+  },
+
+  dismissBatchWarning: () => set({ batchWarningDismissed: true }),
+
+  startProcessing: (fileId, pageCount) => {
+    set((state) => ({
+      files: updateFile(state.files, fileId, { status: 'processing', pageCount }),
+    }));
+  },
+
+  appendPage: (fileId, page) => {
+    set((state) => {
+      const existing = state.files[fileId];
+      if (!existing) return state;
+      // Pages nearly always arrive in order; only OCR'd ones land late. Insert at the right
+      // index rather than re-sorting the whole array on every single append, which made
+      // building up a long document O(n^2 log n).
+      const pages = existing.pages.slice();
+      let i = pages.length;
+      while (i > 0 && pages[i - 1].pageNumber > page.pageNumber) i--;
+      pages.splice(i, 0, page);
+      return {
+        files: updateFile(state.files, fileId, {
+          pages,
+          processedPageCount: pages.length + existing.failedPageCount,
+        }),
+      };
+    });
+  },
+
+  incrementPendingOcr: (fileId) => {
+    set((state) => {
+      const existing = state.files[fileId];
+      if (!existing) return state;
+      return {
+        files: updateFile(state.files, fileId, {
+          pendingOcrCount: existing.pendingOcrCount + 1,
+        }),
+      };
+    });
+  },
+
+  decrementPendingOcr: (fileId) => {
+    set((state) => {
+      const existing = state.files[fileId];
+      if (!existing) return state;
+      return {
+        files: updateFile(state.files, fileId, {
+          pendingOcrCount: Math.max(0, existing.pendingOcrCount - 1),
+        }),
+      };
+    });
+  },
+
+  recordPageFailure: (fileId, error) => {
+    set((state) => {
+      const existing = state.files[fileId];
+      if (!existing) return state;
+      return {
+        files: updateFile(state.files, fileId, {
+          failedPageCount: existing.failedPageCount + 1,
+          processedPageCount: existing.processedPageCount + 1,
+          error,
+        }),
+      };
+    });
+  },
+
+  markFileDone: (fileId) => {
+    set((state) => {
+      const existing = state.files[fileId];
+      if (!existing) return state;
+      return {
+        files: updateFile(state.files, fileId, {
+          status: existing.failedPageCount > 0 ? 'partial' : 'done',
+          sourceSummary: computeSourceSummary(existing.pages),
+        }),
+      };
+    });
+  },
+
+  markFileFailed: (fileId, error) => {
+    set((state) => ({
+      files: updateFile(state.files, fileId, { status: 'failed', error }),
+    }));
+  },
+
+  setSearchQuery: (query) => set({ searchQuery: query }),
+  setSearchMode: (mode) => set({ searchMode: mode }),
+
+  removeFile: (fileId) => {
+    cancelFileProcessing(fileId);
+    deleteFile(fileId);
+    evictPreviewCaches(fileId);
+    evictFileScan(fileId);
+    set((state) => {
+      if (!(fileId in state.files)) return state;
+      const files = { ...state.files };
+      delete files[fileId];
+      return {
+        files,
+        fileOrder: state.fileOrder.filter((id) => id !== fileId),
+        previewTarget: state.previewTarget?.fileId === fileId ? null : state.previewTarget,
+      };
+    });
+  },
+
+  // These fire on every mousemove of a resize drag, so they only touch state. Persistence is
+  // a separate explicit call at drag end — a synchronous localStorage write (plus JSON encode)
+  // at 60+Hz was a real source of drag jank.
+  setSidebarWidth: (width) => set({ sidebarWidth: clamp(width, SIDEBAR_MIN, SIDEBAR_MAX) }),
+  setPreviewWidth: (width) => set({ previewWidth: clamp(width, PREVIEW_MIN, PREVIEW_MAX) }),
+
+  persistPaneWidths: () => {
+    const { sidebarWidth, previewWidth } = get();
+    savePaneWidths(sidebarWidth, previewWidth);
+  },
+
+  setTheme: (theme) => {
+    applyThemeToDocument(theme);
+    saveTheme(theme);
+    set({ theme });
+  },
+
+  toggleTheme: () => {
+    set((state) => {
+      const next: Theme = state.theme === 'dark' ? 'light' : 'dark';
+      applyThemeToDocument(next);
+      saveTheme(next);
+      return { theme: next };
+    });
+  },
+
+  openPreview: (fileId, pageNumber, matchIndex = 0) => set({ previewTarget: { fileId, pageNumber, matchIndex } }),
+  closePreview: () => set({ previewTarget: null }),
+}));
