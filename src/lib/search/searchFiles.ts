@@ -42,7 +42,6 @@ interface CacheEntry {
   pages: SearchableFile['pages'];
   query: string;
   mode: SearchMode;
-  budget: number;
   scan: FileScan | null;
 }
 
@@ -56,7 +55,12 @@ interface FileScan {
 
 const cache = new Map<string, CacheEntry>();
 
-function scanFile(file: SearchableFile, regex: RegExp, budget: number): FileScan | null {
+// Every file is scanned against the same fixed ceiling regardless of what other files are
+// included or in what order — a file's own match count must never depend on its neighbors'.
+// (It previously did: a shrinking "remaining budget" was threaded in from the caller, so
+// checking one more file could silently trim or drop another, already-shown file's matches.
+// See searchFiles() below for where the *global* cap is enforced instead.)
+function scanFile(file: SearchableFile, regex: RegExp): FileScan | null {
   const occurrences: ResultOccurrence[] = [];
   let primarySnippet: MatchSegment[] | null = null;
   let totalMatches = 0;
@@ -64,11 +68,15 @@ function scanFile(file: SearchableFile, regex: RegExp, budget: number): FileScan
   let truncated = false;
 
   for (const page of file.pages) {
-    const remaining = budget - totalMatches;
+    const remaining = MAX_TOTAL_MATCHES - totalMatches;
+    if (remaining <= 0) {
+      truncated = true;
+      break;
+    }
     const matches = findMatches(page.text, regex, remaining + 1);
     if (matches.length === 0) continue;
 
-    const keptMatches = matches.slice(0, Math.max(0, remaining));
+    const keptMatches = matches.length > remaining ? matches.slice(0, remaining) : matches;
     if (matches.length > keptMatches.length) truncated = true;
     if (keptMatches.length > 0) matchesByPage[page.pageNumber] = keptMatches;
 
@@ -110,25 +118,23 @@ export function searchFiles(
     const file = files[fileId];
     if (!file || (file.status !== 'done' && file.status !== 'partial')) continue;
 
-    const budget = MAX_TOTAL_MATCHES - totalMatches;
-    if (budget <= 0) {
+    // The global cap is enforced here, at admission time, rather than by shrinking each file's
+    // own scan — so a file's reported count never shifts depending on which other files are
+    // included or in what order. Once the running total from files already shown reaches the
+    // cap, no further files are added (this one and any after it), but everything already
+    // included keeps its full, honest count.
+    if (totalMatches >= MAX_TOTAL_MATCHES) {
       truncated = true;
       break;
     }
 
     const cached = cache.get(fileId);
     let scan: FileScan | null;
-    if (
-      cached &&
-      cached.pages === file.pages &&
-      cached.query === query &&
-      cached.mode === mode &&
-      cached.budget === budget
-    ) {
+    if (cached && cached.pages === file.pages && cached.query === query && cached.mode === mode) {
       scan = cached.scan;
     } else {
-      scan = scanFile(file, regex, budget);
-      cache.set(fileId, { pages: file.pages, query, mode, budget, scan });
+      scan = scanFile(file, regex);
+      cache.set(fileId, { pages: file.pages, query, mode, scan });
     }
     if (!scan) continue;
 

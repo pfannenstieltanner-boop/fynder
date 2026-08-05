@@ -39,13 +39,41 @@ describe('searchFiles', () => {
     expect(outcome.results[0].matchesByPage[1]).toHaveLength(500);
   });
 
-  it('searches partially processed files and shares the global budget', () => {
+  it('searches partially processed files alongside done ones, each keeping its own full count', () => {
     const first = file('first', 'x '.repeat(300), 'partial');
     const second = file('second', 'x '.repeat(300));
     const outcome = searchFiles({ first, second }, ['first', 'second'], 'x', 'plain', /x/gi);
 
-    expect(outcome.totalMatches).toBe(500);
-    expect(outcome.results.map((result) => result.totalMatches)).toEqual([300, 200]);
+    expect(outcome.results.map((result) => result.totalMatches)).toEqual([300, 300]);
+    expect(outcome.totalMatches).toBe(600);
+    expect(outcome.truncated).toBe(false);
+  });
+
+  it("does not let one file's match count depend on another file being included", () => {
+    const a = file('a', 'x '.repeat(10));
+    const b = file('b', 'x '.repeat(495));
+    const c = file('c', 'x '.repeat(10));
+
+    // b sits between a and c in file order but starts out excluded (e.g. its checkbox unchecked).
+    const withoutB = searchFiles({ a, c }, ['a', 'b', 'c'], 'x', 'plain', /x/gi);
+    expect(withoutB.results.map((r) => r.totalMatches)).toEqual([10, 10]);
+
+    // Including b must not shrink a's or b's own true counts, even though b's real total
+    // (495) would have overflowed a shared, order-dependent budget.
+    const withB = searchFiles({ a, b, c }, ['a', 'b', 'c'], 'x', 'plain', /x/gi);
+    const [aResult, bResult] = withB.results;
+    expect(aResult.totalMatches).toBe(10);
+    expect(bResult.totalMatches).toBe(495);
+  });
+
+  it('stops admitting further files once the running total reaches the cap, without trimming any already-admitted file', () => {
+    const a = file('a', 'x '.repeat(300));
+    const b = file('b', 'x '.repeat(300));
+    const c = file('c', 'x '.repeat(10));
+    const outcome = searchFiles({ a, b, c }, ['a', 'b', 'c'], 'x', 'plain', /x/gi);
+
+    expect(outcome.results.map((r) => r.fileId)).toEqual(['a', 'b']);
+    expect(outcome.results.map((r) => r.totalMatches)).toEqual([300, 300]);
     expect(outcome.truncated).toBe(true);
   });
 });

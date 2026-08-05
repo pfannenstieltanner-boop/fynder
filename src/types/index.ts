@@ -35,6 +35,10 @@ export interface FileRecord {
   pendingOcrCount: number;
   failedPageCount: number;
   sourceSummary: SourceSummary;
+  /** Whether this file's text is included when searching. Checked (true) by default; the
+   *  sidebar checkbox toggles it per file. Purely a search-time filter — extraction/OCR still
+   *  runs regardless, so re-checking a file surfaces results immediately. */
+  includedInSearch: boolean;
 }
 
 export interface MatchSegment {

@@ -47,6 +47,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     for (const id of fileOrder) {
       const file = files[id];
       if (!file || (file.status !== 'done' && file.status !== 'partial')) continue;
+      if (!file.includedInSearch) continue;
       result[id] = {
         id: file.id,
         name: file.name,

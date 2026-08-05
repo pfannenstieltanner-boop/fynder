@@ -36,6 +36,7 @@ function formatMeta(file: FileRecord): string {
 export default memo(function FileRow({ fileId }: { fileId: string }) {
   const file = useAppStore((s) => s.files[fileId]);
   const removeFile = useAppStore((s) => s.removeFile);
+  const toggleFileIncluded = useAppStore((s) => s.toggleFileIncluded);
   if (!file) return null;
 
   const dotTitle = (file.status === 'failed' || file.status === 'partial') && file.error
@@ -44,6 +45,13 @@ export default memo(function FileRow({ fileId }: { fileId: string }) {
 
   return (
     <li className="file-row">
+      <input
+        type="checkbox"
+        className="file-row__checkbox"
+        checked={file.includedInSearch}
+        onChange={() => toggleFileIncluded(file.id)}
+        aria-label={`${file.includedInSearch ? 'Exclude' : 'Include'} ${file.name} in search`}
+      />
       <span className={`file-row__badge file-row__badge--${file.fileType}`}>{TYPE_LABEL[file.fileType]}</span>
       <span className="file-row__name" title={file.name}>
         {file.name}

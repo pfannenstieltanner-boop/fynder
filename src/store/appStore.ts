@@ -97,6 +97,7 @@ interface AppStore {
   markFileFailed: (fileId: string, error: string) => void;
   setSearchQuery: (query: string) => void;
   setSearchMode: (mode: SearchMode) => void;
+  toggleFileIncluded: (fileId: string) => void;
   previewTarget: { fileId: string; pageNumber: number; matchIndex: number } | null;
   openPreview: (fileId: string, pageNumber: number, matchIndex?: number) => void;
   closePreview: () => void;
@@ -117,6 +118,7 @@ function createFileRecord(file: File): FileRecord {
     pendingOcrCount: 0,
     failedPageCount: 0,
     sourceSummary: 'unknown',
+    includedInSearch: true,
   };
 }
 
@@ -257,6 +259,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setSearchQuery: (query) => set({ searchQuery: query }),
   setSearchMode: (mode) => set({ searchMode: mode }),
+
+  toggleFileIncluded: (fileId) => {
+    set((state) => {
+      const existing = state.files[fileId];
+      if (!existing) return state;
+      return {
+        files: updateFile(state.files, fileId, { includedInSearch: !existing.includedInSearch }),
+      };
+    });
+  },
 
   removeFile: (fileId) => {
     cancelFileProcessing(fileId);

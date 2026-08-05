@@ -329,6 +329,15 @@ button {
   border-color: var(--danger-border);
 }
 
+.file-row__checkbox {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .file-row__badge {
   font: 700 9px var(--font-mono);
   padding: 2px 5px;
