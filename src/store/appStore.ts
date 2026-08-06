@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { FileRecord, PageData, SearchMode, SourceSummary, Theme } from '../types';
+import type { FileRecord, ImportFileCandidate, PageData, SearchMode, SourceSummary, Theme } from '../types';
 import { getFileType } from '../lib/files/fileTypes';
 import { deleteFile } from '../lib/pdf/fileCache';
 import { evictPreviewCaches } from '../lib/previewCaches';
@@ -79,7 +79,7 @@ interface AppStore {
   sidebarWidth: number;
   previewWidth: number;
   theme: Theme;
-  addFiles: (files: File[]) => FileRecord[];
+  addFiles: (files: ImportFileCandidate[]) => FileRecord[];
   removeFile: (fileId: string) => void;
   setSidebarWidth: (width: number) => void;
   setPreviewWidth: (width: number) => void;
@@ -103,11 +103,13 @@ interface AppStore {
   closePreview: () => void;
 }
 
-function createFileRecord(file: File): FileRecord {
+function createFileRecord(candidate: ImportFileCandidate): FileRecord {
+  const { file, source } = candidate;
   return {
     id: crypto.randomUUID(),
     name: file.name,
     size: file.size,
+    lastModified: file.lastModified,
     // Callers are expected to have already filtered via isSupportedFile(); this fallback
     // only guards against a FileRecord ever ending up with an invalid fileType.
     fileType: getFileType(file) ?? 'text',
@@ -119,6 +121,7 @@ function createFileRecord(file: File): FileRecord {
     failedPageCount: 0,
     sourceSummary: 'unknown',
     includedInSearch: true,
+    source,
   };
 }
 

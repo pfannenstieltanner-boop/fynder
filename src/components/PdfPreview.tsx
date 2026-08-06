@@ -32,6 +32,11 @@ export default function PdfPreview({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [canvasNativeSize, setCanvasNativeSize] = useState<Size | null>(null);
+  // The scale the base canvas actually rendered at — usually PREVIEW_SCALE, but renderPageToCanvas
+  // reduces it for oversized pages (large-format sheets) to stay within a safe raster budget.
+  // Highlight math must use this, not the PREVIEW_SCALE constant, or boxes land at the wrong
+  // pixel positions whenever the two diverge.
+  const [renderScale, setRenderScale] = useState(PREVIEW_SCALE);
   const [currentMatchIndex, setCurrentMatchIndex] = useState(matchIndex);
 
   const fileId = file.id;
@@ -63,7 +68,7 @@ export default function PdfPreview({
       try {
         const doc = await getDocumentForFile(fileId);
         if (cancelled || !baseCanvasRef.current) return;
-        const { width, height } = await renderPageToCanvas(
+        const { width, height, scale } = await renderPageToCanvas(
           doc,
           pageNumber,
           PREVIEW_SCALE,
@@ -75,6 +80,7 @@ export default function PdfPreview({
           overlayCanvasRef.current.width = width;
           overlayCanvasRef.current.height = height;
         }
+        setRenderScale(scale);
         setCanvasNativeSize({ width, height });
       } catch (err) {
         if (!cancelled && !controller.signal.aborted) {
@@ -97,12 +103,20 @@ export default function PdfPreview({
   // keystroke while editing the query.
   useEffect(() => {
     const canvas = overlayCanvasRef.current;
-    if (!canvas || !page) return;
+    // canvasNativeSize is what actually gates this: it's null until the base-render effect has
+    // both resized this canvas to match the base raster *and* set renderScale to the value that
+    // was actually used. Search results (and so `matches`) are available independent of preview
+    // rendering, so without this guard the effect would draw immediately using whatever stale or
+    // default size the canvas happened to have — briefly for a fast render, but for a
+    // large-format sheet's multi-second rasterization, "briefly" is long enough to see: highlight
+    // rects computed for a 6000px+ raster, drawn into a canvas still at its 300x150 default and
+    // then stretched by CSS to fill the pane, come out as thin, misaligned slivers.
+    if (!canvas || !page || !canvasNativeSize) return;
 
     const matches = results.find((result) => result.fileId === fileId)?.matchesByPage[pageNumber] ?? [];
 
     if (matches.length === 0) {
-      drawHighlights(canvas, [], [], PREVIEW_SCALE, 0);
+      drawHighlights(canvas, [], [], renderScale, 0);
       zoomTargetKeyRef.current = null;
       resetFit();
       return;
@@ -114,20 +128,16 @@ export default function PdfPreview({
       return; // this effect re-runs immediately with the corrected index
     }
 
-    const activeRect = drawHighlights(canvas, page.boxes, matches, PREVIEW_SCALE, clampedIndex);
+    const activeRect = drawHighlights(canvas, page.boxes, matches, renderScale, clampedIndex);
 
-    // Also requires canvasNativeSize/wrapSize: on the very first render of a freshly-opened
-    // page, the base page rasterization is still in flight (async), so there's no viewport to
-    // center within yet. Waiting for it (rather than just consuming zoomTargetKeyRef
-    // prematurely) lets this re-fire once the render actually lands.
+    // wrapSize still needs its own check: the viewport (scroll container) can measure a size
+    // independent of whether the canvas raster is ready, so it's not covered by the guard above.
     const targetKey = `${fileId}:${pageNumber}:${clampedIndex}`;
-    if (activeRect && canvasNativeSize && wrapSize && zoomTargetKeyRef.current !== targetKey) {
+    if (activeRect && wrapSize && zoomTargetKeyRef.current !== targetKey) {
       zoomTargetKeyRef.current = targetKey;
       focusRect(activeRect);
     }
-    // `loading` is included so the overlay redraws once the base render (which sets the
-    // overlay canvas's width/height) finishes, rather than drawing into a stale/zero-sized canvas.
-  }, [page, results, loading, currentMatchIndex, fileId, pageNumber, canvasNativeSize, wrapSize, focusRect, resetFit]);
+  }, [page, results, currentMatchIndex, fileId, pageNumber, canvasNativeSize, wrapSize, renderScale, focusRect, resetFit]);
 
   return (
     <>

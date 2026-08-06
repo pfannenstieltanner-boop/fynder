@@ -5,6 +5,16 @@ export type SearchMode = 'plain' | 'regex';
 export type FileType = 'pdf' | 'docx' | 'text' | 'markdown' | 'tiff';
 export type Theme = 'dark' | 'light';
 
+export interface FileSource {
+  rootName: string;
+  relativePath: string;
+}
+
+export interface ImportFileCandidate {
+  file: File;
+  source?: FileSource;
+}
+
 export interface WordBox {
   text: string;
   x0: number;
@@ -26,6 +36,9 @@ export interface FileRecord {
   id: string;
   name: string;
   size: number;
+  /** From the source File's own lastModified. Combined with name+size to detect duplicate
+   *  imports without reading file contents — see importFiles.ts. */
+  lastModified: number;
   fileType: FileType;
   status: FileStatus;
   error?: string;
@@ -39,6 +52,8 @@ export interface FileRecord {
    *  sidebar checkbox toggles it per file. Purely a search-time filter — extraction/OCR still
    *  runs regardless, so re-checking a file surfaces results immediately. */
   includedInSearch: boolean;
+  /** Present when a file was discovered under an explicitly authorized folder. */
+  source?: FileSource;
 }
 
 export interface MatchSegment {

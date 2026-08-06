@@ -47,12 +47,17 @@ class ExtractionPool {
   private createWorker(index: number): Worker {
     const worker = this.workerFactory();
     worker.onmessage = (e: MessageEvent<WorkerOutMessage>) => this.handleMessage(index, e.data);
-    worker.onerror = () => this.handleWorkerCrash(index);
+    worker.onerror = (event) => this.handleWorkerCrash(index, event);
     return worker;
   }
 
-  private handleWorkerCrash(index: number): void {
+  private handleWorkerCrash(index: number, event: ErrorEvent): void {
     const fileId = this.currentFileId[index];
+    // The generic user-facing message is deliberately vague, but the real cause (a script error
+    // that bypassed the worker's own try/catch entirely — this only fires for that, never for a
+    // normal parse failure) is worth keeping in the console rather than discarding it, since it's
+    // often the only lead when a specific file or file source starts crashing workers.
+    console.error(`[Fynder] ${this.label} extraction worker crashed:`, event.message, `at ${event.filename}:${event.lineno}`, event.error);
     if (fileId) {
       useAppStore.getState().markFileFailed(fileId, `Failed to process ${this.label}: an internal error occurred.`);
       this.extractionDone.delete(fileId);
@@ -206,12 +211,13 @@ class DocxExtractionPool {
       type: 'module',
     });
     worker.onmessage = (e: MessageEvent<DocxWorkerOutMessage>) => this.handleMessage(index, e.data);
-    worker.onerror = () => this.handleWorkerCrash(index);
+    worker.onerror = (event) => this.handleWorkerCrash(index, event);
     return worker;
   }
 
-  private handleWorkerCrash(index: number): void {
+  private handleWorkerCrash(index: number, event: ErrorEvent): void {
     const fileId = this.currentFileId[index];
+    console.error('[Fynder] DOCX extraction worker crashed:', event.message, `at ${event.filename}:${event.lineno}`, event.error);
     if (fileId) {
       useAppStore.getState().markFileFailed(fileId, 'Failed to process Word document: an internal error occurred.');
     }

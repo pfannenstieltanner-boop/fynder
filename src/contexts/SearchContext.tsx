@@ -71,15 +71,24 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Deliberately does *not* blank `outcome` before the new search resolves. `searchableFiles`
+    // changes reference — and re-triggers this effect — every time any loading file appends a
+    // page, including files with no bearing on what's currently searched or previewed. Resetting
+    // to empty here made results (and, downstream, the preview's highlights) flash to nothing and
+    // back on every one of those background updates: PdfPreview's highlight effect treats a
+    // momentary empty match list as "no match", clearing the overlay and resetting the zoom, then
+    // re-zooms back in a moment later once real results land — a visible double-snap while
+    // stepping through matches during a large batch import. Keeping the previous, still-valid
+    // results on screen until the fresh ones are ready avoids that; `searching` is still there for
+    // callers that want a loading indicator without losing what's currently shown.
     let active = true;
-    setOutcome({ results: [], totalMatches: 0, truncated: false });
-    setRegexError(null);
     setSearching(true);
     const task = searchFilesInWorker(searchableFiles, fileOrder, query, mode);
     void task.promise
       .then((next) => {
         if (!active) return;
         setOutcome(next);
+        setRegexError(null);
         setSearching(false);
       })
       .catch((error: unknown) => {

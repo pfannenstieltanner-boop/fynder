@@ -3,7 +3,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { getFile } from './fileCache';
 import { registerPreviewCache } from '../previewCaches';
-import { isPageSizeAllowed } from '../files/limits';
+import { isPageSizeAllowed, computeSafePreviewScale } from '../files/limits';
 
 // The extraction worker sets its own copy of this — GlobalWorkerOptions is scoped per JS
 // realm, so the main thread needs its own assignment to load pdf.js here too.
@@ -54,16 +54,23 @@ export async function renderPageToCanvas(
   scale: number,
   canvas: HTMLCanvasElement,
   signal?: AbortSignal,
-): Promise<{ width: number; height: number }> {
+): Promise<{ width: number; height: number; scale: number }> {
   const page = await doc.getPage(pageNumber);
   const canonicalViewport = page.getViewport({ scale: 1 });
+  // A sanity check on the page's own intrinsic size, not the requested render scale — this is
+  // about rejecting a genuinely malformed/malicious page (an absurd MediaBox), not ordinary
+  // large-format sheets, which is why it stays on the tighter, extraction-shared limit while the
+  // scale below gets the more generous preview-specific budget.
   if (!isPageSizeAllowed(canonicalViewport.width, canonicalViewport.height)) {
     throw new Error('This page is too large to preview safely.');
   }
-  const viewport = page.getViewport({ scale });
-  if (!isPageSizeAllowed(viewport.width, viewport.height)) {
-    throw new Error('This page is too large to preview safely.');
-  }
+  // Renders at the largest scale up to the caller's request that still fits the preview raster
+  // budget, rather than failing outright — a large-format sheet previews at reduced density
+  // instead of not at all. Callers must use the *returned* scale (not their requested one) for
+  // anything derived from this raster, e.g. converting canonical word-box coordinates to pixels
+  // for highlight drawing — see PdfPreview's renderScale state.
+  const safeScale = computeSafePreviewScale(canonicalViewport.width, canonicalViewport.height, scale);
+  const viewport = page.getViewport({ scale: safeScale });
   canvas.width = viewport.width;
   canvas.height = viewport.height;
   const ctx = canvas.getContext('2d');
@@ -77,5 +84,5 @@ export async function renderPageToCanvas(
   } finally {
     signal?.removeEventListener('abort', cancel);
   }
-  return { width: viewport.width, height: viewport.height };
+  return { width: viewport.width, height: viewport.height, scale: safeScale };
 }
