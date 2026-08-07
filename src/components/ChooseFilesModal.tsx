@@ -42,6 +42,38 @@ function termKey(rootName: string, relativePath: string): string {
   return `${rootName.toLocaleLowerCase()}::${relativePath.toLocaleLowerCase()}`;
 }
 
+// Two callers need "the selected files with duplicate handles collapsed": addSelectedFiles (before
+// importing) and saveCurrentSet (before recording which paths a saved set should re-select). Shared
+// here so there's one place that walks isSameEntry() pairwise.
+async function dedupeDiscovered(items: DiscoveredFile[]): Promise<DiscoveredFile[]> {
+  const unique: DiscoveredFile[] = [];
+  for (const item of items) {
+    const duplicateChecks = await Promise.all(unique.map((existing) => existing.handle.isSameEntry(item.handle)));
+    if (duplicateChecks.some(Boolean)) continue;
+    unique.push(item);
+  }
+  return unique;
+}
+
+function buildSavedSet(
+  name: string,
+  roots: FolderRoot[],
+  filters: DiscoveryFilters,
+  selectedItems: DiscoveredFile[],
+): SavedSourceSet {
+  const now = new Date().toISOString();
+  return {
+    version: 1,
+    id: crypto.randomUUID(),
+    name,
+    createdAt: now,
+    updatedAt: now,
+    rootNames: roots.map((root) => root.name),
+    filters,
+    selectedRelativePaths: selectedItems.map((file) => termKey(file.rootName, file.relativePath)),
+  };
+}
+
 function TermEditor({
   label,
   value,
@@ -128,6 +160,7 @@ export default function ChooseFilesModal({
   const [savedSets, setSavedSets] = useState<SavedSourceSet[]>(loadSavedSourceSets);
   const [saveSet, setSaveSet] = useState(false);
   const [saveName, setSaveName] = useState('');
+  const [adding, setAdding] = useState(false);
   const [pendingPaths, setPendingPaths] = useState<Set<string> | null>(null);
   // How many roots need to be reconnected before `pendingPaths` is fully accounted for. Without
   // this, restoring a saved set spanning more than one root would only ever auto-select matches
@@ -303,42 +336,53 @@ export default function ChooseFilesModal({
   };
 
   const addSelectedFiles = async () => {
-    const selected = discovered.filter((file) => selectedIds.has(file.id)).slice(0, remainingCapacity);
-    const candidates: ImportFileCandidate[] = [];
-    const uniqueItems: DiscoveredFile[] = [];
-    let unavailable = 0;
-    for (const item of selected) {
-      try {
-        const duplicateChecks = await Promise.all(uniqueItems.map((existing) => existing.handle.isSameEntry(item.handle)));
-        if (duplicateChecks.some(Boolean)) continue;
-        uniqueItems.push(item);
-        candidates.push({
-          file: await item.handle.getFile(),
-          source: { rootName: item.rootName, relativePath: item.relativePath },
-        });
-      } catch {
-        unavailable++;
+    setAdding(true);
+    try {
+      const selected = discovered.filter((file) => selectedIds.has(file.id)).slice(0, remainingCapacity);
+      const uniqueItems = await dedupeDiscovered(selected);
+      const candidates: ImportFileCandidate[] = [];
+      let unavailable = 0;
+      for (const item of uniqueItems) {
+        try {
+          candidates.push({
+            file: await item.handle.getFile(),
+            source: { rootName: item.rootName, relativePath: item.relativePath },
+          });
+        } catch {
+          unavailable++;
+        }
       }
+      const report = importFiles(candidates);
+      if (saveSet && saveName.trim()) {
+        const saved = buildSavedSet(saveName.trim(), roots, filters, uniqueItems);
+        const next = [...savedSets, saved];
+        setSavedSets(next);
+        saveSourceSets(next);
+      }
+      setMessage(`${reportMessage(report)}${unavailable ? ` ${unavailable} selected file${unavailable === 1 ? ' was' : 's were'} no longer available.` : ''}`.trim());
+      if (report.addedCount > 0) onClose();
+    } finally {
+      setAdding(false);
     }
-    const report = importFiles(candidates);
-    if (saveSet && saveName.trim()) {
-      const now = new Date().toISOString();
-      const saved: SavedSourceSet = {
-        version: 1,
-        id: crypto.randomUUID(),
-        name: saveName.trim(),
-        createdAt: now,
-        updatedAt: now,
-        rootNames: roots.map((root) => root.name),
-        filters,
-        selectedRelativePaths: uniqueItems.map((file) => termKey(file.rootName, file.relativePath)),
-      };
-      const next = [...savedSets, saved];
-      setSavedSets(next);
-      saveSourceSets(next);
-    }
-    setMessage(`${reportMessage(report)}${unavailable ? ` ${unavailable} selected file${unavailable === 1 ? ' was' : 's were'} no longer available.` : ''}`.trim());
-    if (report.addedCount > 0) onClose();
+  };
+
+  // Saves the current roots + filters (optionally with whatever's selected right now) without
+  // adding anything to the working file list — for the case where the goal is "remember this
+  // folder/filter combo to re-run later," not "I have files ready to import right now." Unlike
+  // addSelectedFiles, this works with zero files selected (e.g. a freshly picked, still-empty
+  // folder, or filters that don't currently match anything).
+  const saveCurrentSet = async () => {
+    const name = saveName.trim();
+    if (!name || roots.length === 0) return;
+    const selected = discovered.filter((file) => selectedIds.has(file.id));
+    const uniqueItems = await dedupeDiscovered(selected);
+    const saved = buildSavedSet(name, roots, filters, uniqueItems);
+    const next = [...savedSets, saved];
+    setSavedSets(next);
+    saveSourceSets(next);
+    setMessage(`Saved “${saved.name}”.`);
+    setSaveSet(false);
+    setSaveName('');
   };
 
   const loadSavedSet = (id: string) => {
@@ -476,7 +520,14 @@ export default function ChooseFilesModal({
             <section className="file-discovery__section file-discovery__results">
               <div className="file-discovery__results-heading">
                 <h3><span>3</span> Review matching files</h3>
-                <p>{scanning ? `Scanning… ${scannedCount.toLocaleString()} entries checked` : `${visibleFiles.length.toLocaleString()} matching files · ${visibleSelectedCount} selected`}</p>
+                {scanning ? (
+                  <p className="file-discovery__scanning">
+                    <span className="spinner" aria-hidden="true" />
+                    Scanning… {scannedCount.toLocaleString()} entries checked
+                  </p>
+                ) : (
+                  <p>{visibleFiles.length.toLocaleString()} matching files · {visibleSelectedCount} selected</p>
+                )}
               </div>
               {summary && (summary.inaccessibleCount > 0 || summary.truncated) && (
                 <p className="file-discovery__warning">
@@ -529,8 +580,26 @@ export default function ChooseFilesModal({
             </div>
             <div>
               <button type="button" onClick={onClose}>Cancel</button>
-              <button type="button" className="file-discovery__primary" disabled={selectedIds.size === 0 || (saveSet && !saveName.trim())} onClick={() => void addSelectedFiles()}>
-                Add {Math.min(selectedIds.size, remainingCapacity)} file{Math.min(selectedIds.size, remainingCapacity) === 1 ? '' : 's'}
+              {saveSet && selectedIds.size === 0 && (
+                <button type="button" disabled={roots.length === 0 || !saveName.trim()} onClick={() => void saveCurrentSet()}>
+                  Save set
+                </button>
+              )}
+              <button
+                type="button"
+                className="file-discovery__primary"
+                disabled={adding || selectedIds.size === 0 || (saveSet && !saveName.trim())}
+                aria-busy={adding}
+                onClick={() => void addSelectedFiles()}
+              >
+                {adding ? (
+                  <>
+                    <span className="spinner" aria-hidden="true" />
+                    Adding files…
+                  </>
+                ) : (
+                  `Add ${Math.min(selectedIds.size, remainingCapacity)} file${Math.min(selectedIds.size, remainingCapacity) === 1 ? '' : 's'}`
+                )}
               </button>
             </div>
           </footer>

@@ -1,4 +1,4 @@
-import type { MatchRange, SearchMode } from '../../types';
+import type { MatchRange, SearchMode, SearchTermsMode } from '../../types';
 import type { SearchOutcome, SearchableFile } from './searchFiles';
 import type { SearchWorkerRequest, SearchWorkerResponse } from '../../workers/search.worker';
 
@@ -59,16 +59,18 @@ function runWorkerTask<T>(request: SearchWorkerRequest, read: (response: SearchW
 export function searchFilesInWorker(
   files: Record<string, SearchableFile>,
   fileOrder: string[],
-  query: string,
+  terms: string[],
   mode: SearchMode,
+  combineMode: SearchTermsMode,
 ): WorkerTask<SearchOutcome> {
   const request: SearchWorkerRequest = {
     id: nextRequestId++,
     type: 'search-files',
     files,
     fileOrder,
-    query,
+    terms,
     mode,
+    combineMode,
   };
   return runWorkerTask(request, (response) => {
     if (response.type !== 'search-result') throw new Error('Unexpected search response.');
@@ -78,16 +80,18 @@ export function searchFilesInWorker(
 
 export function findMatchesInWorker(
   text: string,
-  query: string,
+  terms: string[],
   mode: SearchMode,
+  combineMode: SearchTermsMode,
   limit = 2_000,
 ): WorkerTask<MatchRange[]> {
   const request: SearchWorkerRequest = {
     id: nextRequestId++,
     type: 'find-matches',
     text,
-    query,
+    terms,
     mode,
+    combineMode,
     limit,
   };
   return runWorkerTask(request, (response) => {

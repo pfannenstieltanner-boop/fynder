@@ -329,6 +329,12 @@ button {
   border-color: var(--danger-border);
 }
 
+/* Mirrors .filetype-chip--muted's opacity — a file whose type isn't among the selected search
+   chips is deemphasized here, not hidden; it's still loaded and removable, just not searched. */
+.file-row--type-excluded {
+  opacity: 0.45;
+}
+
 .file-row__checkbox {
   flex-shrink: 0;
   width: 13px;
@@ -474,24 +480,67 @@ button {
   overflow: hidden;
 }
 
+.search-section {
+  border-bottom: 1px solid var(--border-default);
+  flex-shrink: 0;
+}
+
 .search-row {
   padding: 14px 20px;
-  border-bottom: 1px solid var(--border-default);
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-shrink: 0;
 }
 
 .search-pill {
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 9px;
+  flex-wrap: wrap;
+  gap: 6px;
   background: var(--bg-input);
   border: 1px solid var(--border-input);
   border-radius: 9px;
-  padding: 9px 12px;
+  padding: 7px 12px;
+  min-width: 0;
+}
+
+.search-term-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  color: var(--text-primary);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border-active);
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.search-term-chip button {
+  padding: 0;
+  color: var(--text-secondary);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.term-combine-toggle {
+  font: 500 11.5px -apple-system, sans-serif;
+  color: var(--text-faint);
+  white-space: nowrap;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.term-combine-toggle:hover {
+  color: var(--text-secondary);
 }
 
 .search-pill__icon {
@@ -501,7 +550,7 @@ button {
 
 .search-pill input {
   flex: 1;
-  min-width: 0;
+  min-width: 90px;
   border: none;
   background: none;
   outline: none;
@@ -526,6 +575,38 @@ button {
 
 .regex-toggle--active {
   color: var(--accent);
+}
+
+.filetype-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 0 20px 12px;
+}
+
+.filetype-chip--muted {
+  opacity: 0.45;
+}
+
+.filetype-chip {
+  font: 600 11.5px -apple-system, sans-serif;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-input);
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.filetype-chip:hover {
+  background: var(--bg-hover);
+}
+
+.filetype-chip--active {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-border-active);
 }
 
 .results-summary {
@@ -837,6 +918,38 @@ button {
   color: var(--pdf-fg);
 }
 
+.preview-pane__status--loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Minimal CSS-only spinner, shared by the preview panes' "Rendering…" state and the Choose files
+   modal's "Scanning…" state — one rotating ring rather than a bespoke animation per spot. */
+.spinner {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  opacity: 0.35;
+  border-top-color: currentColor;
+  border-top-color: var(--accent);
+  animation: spinner-rotate 0.7s linear infinite;
+}
+
+@keyframes spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+
 .preview-pane__canvas-stack {
   position: relative;
   transform-origin: 0 0;
@@ -971,6 +1084,12 @@ button {
   margin: 0;
 }
 
+.file-discovery__scanning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .file-discovery__header h2 {
   font: 700 16px -apple-system, sans-serif;
 }
@@ -1063,6 +1182,14 @@ button {
   background: var(--accent);
   border-color: var(--accent);
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-discovery button.file-discovery__primary .spinner {
+  border-color: rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
 }
 
 /* `.file-discovery button:hover:not(:disabled)` above is more specific than this rule's own

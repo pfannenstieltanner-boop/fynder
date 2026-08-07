@@ -27,6 +27,9 @@ const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 10;
 const ZOOM_SENSITIVITY = 0.0012;
 export const TARGET_MATCH_HEIGHT_PX = 32;
+// Auto-zoom-to-match (focusRect) previously zoomed all the way to TARGET_MATCH_HEIGHT_PX; this
+// backs it off by about a third, landing on a less aggressive, still-readable zoom level.
+const FOCUS_ZOOM_MULTIPLIER = 2 / 3;
 // Below this much pointer movement, a left/middle-button press is treated as a click rather than
 // a pan drag, so an ordinary click doesn't twitch the view by a stray pixel.
 const DRAG_THRESHOLD_PX = 3;
@@ -274,7 +277,7 @@ export function useZoomPan(
   const focusRect = useCallback(
     (rect: Rect) => {
       if (!wrapSize) return;
-      const targetZoom = clamp(TARGET_MATCH_HEIGHT_PX / rect.height, ZOOM_MIN, ZOOM_MAX);
+      const targetZoom = clamp((TARGET_MATCH_HEIGHT_PX / rect.height) * FOCUS_ZOOM_MULTIPLIER, ZOOM_MIN, ZOOM_MAX);
       const centerX = rect.x + rect.width / 2;
       const centerY = rect.y + rect.height / 2;
       setView({

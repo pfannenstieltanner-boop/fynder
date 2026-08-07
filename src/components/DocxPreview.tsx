@@ -66,7 +66,7 @@ function applyHighlights(root: HTMLElement, matches: MatchRange[], activeIndex: 
 }
 
 export default function DocxPreview({ file, matchIndex }: { file: FileRecord; matchIndex: number }) {
-  const { query, mode } = useSearch();
+  const { terms, mode, combineMode } = useSearch();
 
   const contentRef = useRef<HTMLDivElement>(null);
   const styleContainerRef = useRef<HTMLDivElement>(null);
@@ -154,13 +154,13 @@ export default function DocxPreview({ file, matchIndex }: { file: FileRecord; ma
     if (!container || loading || error) return;
 
     clearHighlights(container);
-    if (!query) {
+    if (terms.length === 0) {
       zoomTargetKeyRef.current = null;
       resetFit();
       return;
     }
     let active = true;
-    const task = findMatchesInWorker(container.textContent ?? '', query, mode, 500);
+    const task = findMatchesInWorker(container.textContent ?? '', terms, mode, combineMode, 500);
     void task.promise
       .then((matches) => {
         if (!active) return;
@@ -199,8 +199,9 @@ export default function DocxPreview({ file, matchIndex }: { file: FileRecord; ma
       task.cancel();
     };
   }, [
-    query,
+    terms,
     mode,
+    combineMode,
     loading,
     error,
     currentMatchIndex,
@@ -217,7 +218,12 @@ export default function DocxPreview({ file, matchIndex }: { file: FileRecord; ma
     <>
       <ZoomToolbar zoomPercent={zoomPercent} disabled={!contentSize} onStep={stepZoom} onFit={resetFit} />
       <div className="preview-pane__canvas-wrap" ref={scrollWrapRef}>
-        {loading && <p className="preview-pane__status">Rendering…</p>}
+        {loading && (
+          <p className="preview-pane__status preview-pane__status--loading">
+            <span className="spinner" aria-hidden="true" />
+            Rendering…
+          </p>
+        )}
         {error && <p className="preview-pane__status preview-pane__status--error">{error}</p>}
         <div style={{ display: 'none' }} ref={styleContainerRef} />
         <div className="docx-preview__stack" style={stackStyle}>

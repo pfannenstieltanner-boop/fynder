@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useSearch } from '../contexts/SearchContext';
 import TextPreview from './TextPreview';
@@ -52,6 +52,49 @@ export default function PreviewShell({
     const first = target.occurrences[0];
     if (first) openPreview(target.fileId, first.pageNumber, first.matchIndexInPage);
   }
+
+  // Enter advances to the next instance in the Instance list (this results column), not just the
+  // next match within the current file — once the current file's last shown occurrence is
+  // reached, it rolls into the next file's first occurrence, wrapping back to the first file
+  // after the last. Repeated presses must keep advancing every time, so this deliberately does
+  // *not* try to tell "focus is still sitting on the row that was active a moment ago" apart from
+  // "focus is on some other row" — after the first press moves the active instance elsewhere,
+  // focus itself doesn't move (React keeps the same DOM node for that row), so any check tied to
+  // that row's now-stale active state would only ever let the very first Enter through.
+  //
+  // Registered on the *capture* phase, not bubble: a result card and each occurrence row are
+  // themselves `role="button"` divs with their own Enter handler (select-this-row) that calls
+  // stopPropagation(). A bubble-phase listener here would simply never see the keydown when one
+  // of those rows has focus — capture runs top-down before that local handler gets a chance to
+  // stop it. stopPropagation() below keeps that local handler from also firing afterward with the
+  // now-stale occurrence it captured.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Enter' || !currentResult || occurrenceIndex < 0) return;
+      const active = document.activeElement;
+      if (active instanceof HTMLElement) {
+        const tag = active.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || active.isContentEditable) {
+          return;
+        }
+      }
+
+      e.preventDefault();
+      e.stopPropagation();
+      if (occurrenceIndex + 1 < occurrences.length) {
+        const occ = occurrences[occurrenceIndex + 1];
+        openPreview(currentResult.fileId, occ.pageNumber, occ.matchIndexInPage);
+        return;
+      }
+      if (results.length === 0) return;
+      const nextFileIndex = (resultIndex + 1) % results.length;
+      const nextResult = results[nextFileIndex];
+      const first = nextResult.occurrences[0];
+      if (first) openPreview(nextResult.fileId, first.pageNumber, first.matchIndexInPage);
+    }
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
+  }, [currentResult, occurrenceIndex, occurrences, results, resultIndex, openPreview]);
 
   return (
     <div className="preview-pane" style={{ width }}>

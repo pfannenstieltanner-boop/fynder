@@ -116,7 +116,12 @@ export default function TiffPreview({
         pageInfo={file.pageCount ? { current: pageNumber, total: file.pageCount } : null}
       />
       <div className="preview-pane__canvas-wrap" ref={scrollWrapRef}>
-        {loading && <p className="preview-pane__status">Rendering…</p>}
+        {loading && (
+          <p className="preview-pane__status preview-pane__status--loading">
+            <span className="spinner" aria-hidden="true" />
+            Rendering…
+          </p>
+        )}
         {error && <p className="preview-pane__status preview-pane__status--error">{error}</p>}
         <div className="preview-pane__canvas-stack" style={stackStyle}>
           <canvas ref={baseCanvasRef} className="preview-pane__canvas" />

@@ -2,6 +2,9 @@ export type FileStatus = 'queued' | 'processing' | 'done' | 'partial' | 'failed'
 export type PageSource = 'text' | 'ocr';
 export type SourceSummary = 'text' | 'ocr' | 'mixed' | 'unknown';
 export type SearchMode = 'plain' | 'regex';
+/** How multiple committed search terms combine — a file must contain every term ('all') or at
+ *  least one ('any'). Only meaningful in plain mode; regex mode always has exactly one term. */
+export type SearchTermsMode = 'any' | 'all';
 export type FileType = 'pdf' | 'docx' | 'text' | 'markdown' | 'tiff';
 export type Theme = 'dark' | 'light';
 

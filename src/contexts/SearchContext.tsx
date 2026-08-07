@@ -3,12 +3,16 @@ import { useAppStore } from '../store/appStore';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { searchFilesInWorker } from '../lib/search/searchWorkerClient';
 import type { SearchableFile } from '../lib/search/searchFiles';
-import type { FileSearchResult, SearchMode } from '../types';
+import type { FileSearchResult, SearchMode, SearchTermsMode } from '../types';
 
 export interface SearchState {
-  /** Debounced — the query the results and previews are actually showing. */
+  /** Debounced — the raw text currently in the search box (not yet committed as a term). */
   query: string;
+  /** The terms actually being searched: committed chips plus the in-progress query, deduped.
+   *  In regex mode this is always a single entry (the query itself) — chips are plain-mode only. */
+  terms: string[];
   mode: SearchMode;
+  combineMode: SearchTermsMode;
   results: FileSearchResult[];
   totalMatches: number;
   truncated: boolean;
@@ -18,7 +22,9 @@ export interface SearchState {
 
 const EMPTY: SearchState = {
   query: '',
+  terms: [],
   mode: 'plain',
+  combineMode: 'all',
   results: [],
   totalMatches: 0,
   truncated: false,
@@ -39,15 +45,40 @@ const SearchContext = createContext<SearchState>(EMPTY);
 export function SearchProvider({ children }: { children: ReactNode }) {
   const searchQuery = useAppStore((s) => s.searchQuery);
   const mode = useAppStore((s) => s.searchMode);
+  const searchTerms = useAppStore((s) => s.searchTerms);
+  const combineMode = useAppStore((s) => s.searchTermsMode);
   const files = useAppStore((s) => s.files);
   const fileOrder = useAppStore((s) => s.fileOrder);
+  const searchFileTypes = useAppStore((s) => s.searchFileTypes);
   const query = useDebouncedValue(searchQuery, 200);
+
+  // The committed chips plus whatever's still being typed — so results (and the preview
+  // highlight) keep updating live while the next term is in progress, exactly like today's
+  // single-term search did, rather than only reacting once Tab commits it. Regex mode has no
+  // chips (the UI disables them there — one regex can already express any combination), so it's
+  // always just the query itself.
+  const terms = useMemo(() => {
+    if (mode === 'regex') return query.length > 0 ? [query] : [];
+    const draft = query.trim();
+    const combined = draft.length > 0 ? [...searchTerms, draft] : searchTerms;
+    const seen = new Set<string>();
+    const deduped: string[] = [];
+    for (const term of combined) {
+      const key = term.toLocaleLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(term);
+    }
+    return deduped;
+  }, [mode, query, searchTerms]);
+
   const searchableFiles = useMemo(() => {
     const result: Record<string, SearchableFile> = {};
     for (const id of fileOrder) {
       const file = files[id];
       if (!file || (file.status !== 'done' && file.status !== 'partial')) continue;
       if (!file.includedInSearch) continue;
+      if (!searchFileTypes.includes(file.fileType)) continue;
       result[id] = {
         id: file.id,
         name: file.name,
@@ -57,14 +88,14 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       };
     }
     return result;
-  }, [files, fileOrder]);
+  }, [files, fileOrder, searchFileTypes]);
 
   const [outcome, setOutcome] = useState({ results: [] as FileSearchResult[], totalMatches: 0, truncated: false });
   const [regexError, setRegexError] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
-    if (query.length === 0) {
+    if (terms.length === 0) {
       setOutcome({ results: [], totalMatches: 0, truncated: false });
       setRegexError(null);
       setSearching(false);
@@ -83,7 +114,7 @@ export function SearchProvider({ children }: { children: ReactNode }) {
     // callers that want a loading indicator without losing what's currently shown.
     let active = true;
     setSearching(true);
-    const task = searchFilesInWorker(searchableFiles, fileOrder, query, mode);
+    const task = searchFilesInWorker(searchableFiles, fileOrder, terms, mode, combineMode);
     void task.promise
       .then((next) => {
         if (!active) return;
@@ -100,12 +131,12 @@ export function SearchProvider({ children }: { children: ReactNode }) {
       active = false;
       task.cancel();
     };
-  }, [searchableFiles, fileOrder, query, mode]);
+  }, [searchableFiles, fileOrder, terms, mode, combineMode]);
 
   const value = useMemo<SearchState>(() => {
-    if (query.length === 0) return { ...EMPTY, mode };
-    return { query, mode, ...outcome, regexError, searching };
-  }, [query, mode, outcome, regexError, searching]);
+    if (terms.length === 0) return { ...EMPTY, mode, combineMode };
+    return { query, terms, mode, combineMode, ...outcome, regexError, searching };
+  }, [query, terms, mode, combineMode, outcome, regexError, searching]);
 
   return <SearchContext.Provider value={value}>{children}</SearchContext.Provider>;
 }

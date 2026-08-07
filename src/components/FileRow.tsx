@@ -37,14 +37,18 @@ export default memo(function FileRow({ fileId }: { fileId: string }) {
   const file = useAppStore((s) => s.files[fileId]);
   const removeFile = useAppStore((s) => s.removeFile);
   const toggleFileIncluded = useAppStore((s) => s.toggleFileIncluded);
+  const searchFileTypes = useAppStore((s) => s.searchFileTypes);
   if (!file) return null;
 
   const dotTitle = (file.status === 'failed' || file.status === 'partial') && file.error
     ? file.error
     : STATUS_TITLE[file.status];
+  // Grayed out, not hidden — the file-type chips filter what's *searched*, not what's loaded, so
+  // an excluded file stays visible (and removable) in the tree, just visually deemphasized.
+  const typeExcluded = !searchFileTypes.includes(file.fileType);
 
   return (
-    <li className="file-row">
+    <li className={`file-row${typeExcluded ? ' file-row--type-excluded' : ''}`}>
       <input
         type="checkbox"
         className="file-row__checkbox"

@@ -2,7 +2,7 @@
 import { buildSearchRegex } from '../lib/search/buildRegex';
 import { findMatches } from '../lib/search/findMatches';
 import { searchFiles, type SearchOutcome, type SearchableFile } from '../lib/search/searchFiles';
-import type { MatchRange, SearchMode } from '../types';
+import type { MatchRange, SearchMode, SearchTermsMode } from '../types';
 
 export type SearchWorkerRequest =
   | {
@@ -10,10 +10,19 @@ export type SearchWorkerRequest =
       type: 'search-files';
       files: Record<string, SearchableFile>;
       fileOrder: string[];
-      query: string;
+      terms: string[];
       mode: SearchMode;
+      combineMode: SearchTermsMode;
     }
-  | { id: number; type: 'find-matches'; text: string; query: string; mode: SearchMode; limit?: number };
+  | {
+      id: number;
+      type: 'find-matches';
+      text: string;
+      terms: string[];
+      mode: SearchMode;
+      combineMode: SearchTermsMode;
+      limit?: number;
+    };
 
 export type SearchWorkerResponse =
   | { id: number; type: 'search-result'; outcome: SearchOutcome }
@@ -22,7 +31,7 @@ export type SearchWorkerResponse =
 
 self.onmessage = (event: MessageEvent<SearchWorkerRequest>) => {
   const request = event.data;
-  const built = buildSearchRegex(request.query, request.mode);
+  const built = buildSearchRegex(request.terms, request.mode);
   if ('error' in built) {
     post({ id: request.id, type: 'error', message: built.error || 'Invalid search pattern.' });
     return;
@@ -31,7 +40,15 @@ self.onmessage = (event: MessageEvent<SearchWorkerRequest>) => {
     post({
       id: request.id,
       type: 'search-result',
-      outcome: searchFiles(request.files, request.fileOrder, request.query, request.mode, built.regex),
+      outcome: searchFiles(
+        request.files,
+        request.fileOrder,
+        request.terms,
+        request.mode,
+        request.combineMode,
+        built.regex,
+        built.termRegexes,
+      ),
     });
   } else {
     post({
@@ -45,4 +62,3 @@ self.onmessage = (event: MessageEvent<SearchWorkerRequest>) => {
 function post(message: SearchWorkerResponse): void {
   (self as unknown as Worker).postMessage(message);
 }
-

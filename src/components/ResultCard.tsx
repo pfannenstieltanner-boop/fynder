@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FileSearchResult } from '../types';
 import { useAppStore } from '../store/appStore';
 import MatchSnippet from './MatchSnippet';
@@ -10,6 +10,14 @@ export default function ResultCard({ result }: { result: FileSearchResult }) {
 
   const isSelected = previewTarget?.fileId === result.fileId;
   const isMulti = result.totalMatches > 1;
+
+  // Auto-expands whenever this card *becomes* the selected file — e.g. cycling here via Enter, or
+  // the preview footer's Prev/Next file buttons — so its instances are visible without an extra
+  // click. Keyed on the isSelected transition rather than running every render so a user can still
+  // manually collapse an already-selected card without this immediately reopening it.
+  useEffect(() => {
+    if (isSelected && isMulti) setExpanded(true);
+  }, [isSelected, isMulti]);
 
   const handleCardClick = () => {
     const first = result.occurrences[0];

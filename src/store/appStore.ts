@@ -1,6 +1,15 @@
 import { create } from 'zustand';
-import type { FileRecord, ImportFileCandidate, PageData, SearchMode, SourceSummary, Theme } from '../types';
-import { getFileType } from '../lib/files/fileTypes';
+import type {
+  FileRecord,
+  FileType,
+  ImportFileCandidate,
+  PageData,
+  SearchMode,
+  SearchTermsMode,
+  SourceSummary,
+  Theme,
+} from '../types';
+import { ALL_FILE_TYPES, getFileType } from '../lib/files/fileTypes';
 import { deleteFile } from '../lib/pdf/fileCache';
 import { evictPreviewCaches } from '../lib/previewCaches';
 import { evictFileScan } from '../lib/search/searchFiles';
@@ -71,8 +80,19 @@ applyThemeToDocument(initialTheme);
 interface AppStore {
   files: Record<string, FileRecord>;
   fileOrder: string[];
+  /** The in-progress text in the search box — not yet committed as a term. Also doubles as the
+   *  sole query in regex mode, where multi-term chips are disabled. */
   searchQuery: string;
   searchMode: SearchMode;
+  /** Terms committed via Tab (plain mode only). Combined with `searchQuery` (if non-empty) to
+   *  form the live query — see SearchContext — so results still update as the user types the
+   *  next term, not only once they've pressed Tab. */
+  searchTerms: string[];
+  searchTermsMode: SearchTermsMode;
+  /** Which file types are included in search. Defaults to every supported type — i.e. the "All"
+   *  chip's state — rather than an empty array meaning "all," so an empty array unambiguously
+   *  means the user deselected everything and should see zero results. */
+  searchFileTypes: FileType[];
   cumulativeFileCount: number;
   cumulativeBytes: number;
   batchWarningDismissed: boolean;
@@ -97,6 +117,13 @@ interface AppStore {
   markFileFailed: (fileId: string, error: string) => void;
   setSearchQuery: (query: string) => void;
   setSearchMode: (mode: SearchMode) => void;
+  /** Trims and moves the current `searchQuery` into `searchTerms` (deduped, case-insensitively),
+   *  then clears the input for the next term. No-op if the trimmed query is empty. */
+  commitSearchTerm: () => void;
+  removeSearchTerm: (term: string) => void;
+  setSearchTermsMode: (mode: SearchTermsMode) => void;
+  toggleSearchFileType: (fileType: FileType) => void;
+  setAllSearchFileTypes: () => void;
   toggleFileIncluded: (fileId: string) => void;
   previewTarget: { fileId: string; pageNumber: number; matchIndex: number } | null;
   openPreview: (fileId: string, pageNumber: number, matchIndex?: number) => void;
@@ -125,6 +152,20 @@ function createFileRecord(candidate: ImportFileCandidate): FileRecord {
   };
 }
 
+// Closes the open preview when a file-type chip change excludes the previewed file's type — the
+// preview pane otherwise keeps showing a file that's now grayed out of the tree. Called with the
+// *next* type selection, since this runs as part of the same set() that applies it.
+function previewTargetAfterTypeChange(
+  target: AppStore['previewTarget'],
+  files: Record<string, FileRecord>,
+  nextTypes: FileType[],
+): AppStore['previewTarget'] {
+  if (!target) return null;
+  const file = files[target.fileId];
+  if (file && !nextTypes.includes(file.fileType)) return null;
+  return target;
+}
+
 function computeSourceSummary(pages: PageData[]): SourceSummary {
   if (pages.length === 0) return 'unknown';
   const hasText = pages.some((p) => p.source === 'text');
@@ -150,6 +191,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   fileOrder: [],
   searchQuery: '',
   searchMode: 'plain',
+  searchTerms: [],
+  searchTermsMode: 'all',
+  searchFileTypes: [...ALL_FILE_TYPES],
   cumulativeFileCount: 0,
   cumulativeBytes: 0,
   batchWarningDismissed: false,
@@ -262,6 +306,48 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setSearchQuery: (query) => set({ searchQuery: query }),
   setSearchMode: (mode) => set({ searchMode: mode }),
+
+  commitSearchTerm: () => {
+    set((state) => {
+      const trimmed = state.searchQuery.trim();
+      if (!trimmed) return state;
+      const alreadyPresent = state.searchTerms.some((term) => term.toLocaleLowerCase() === trimmed.toLocaleLowerCase());
+      return {
+        searchTerms: alreadyPresent ? state.searchTerms : [...state.searchTerms, trimmed],
+        searchQuery: '',
+      };
+    });
+  },
+  removeSearchTerm: (term) => {
+    set((state) => ({ searchTerms: state.searchTerms.filter((existing) => existing !== term) }));
+  },
+  setSearchTermsMode: (mode) => set({ searchTermsMode: mode }),
+
+  toggleSearchFileType: (fileType) => {
+    set((state) => {
+      // Coming from "All" (every type selected), picking one is a fresh, exclusive choice —
+      // not one more toggle against the full set, which would just remove that type and leave
+      // "everything except it" selected. Once the user is in a custom selection, further clicks
+      // go back to normal multiselect toggling (add/remove), until removing the last selected
+      // type would leave nothing selected, in which case it falls back to "All" rather than
+      // silently searching zero files.
+      const allSelected = state.searchFileTypes.length === ALL_FILE_TYPES.length;
+      let searchFileTypes: FileType[];
+      if (allSelected) {
+        searchFileTypes = [fileType];
+      } else if (state.searchFileTypes.includes(fileType)) {
+        const next = state.searchFileTypes.filter((type) => type !== fileType);
+        searchFileTypes = next.length > 0 ? next : [...ALL_FILE_TYPES];
+      } else {
+        searchFileTypes = [...state.searchFileTypes, fileType];
+      }
+      return {
+        searchFileTypes,
+        previewTarget: previewTargetAfterTypeChange(state.previewTarget, state.files, searchFileTypes),
+      };
+    });
+  },
+  setAllSearchFileTypes: () => set({ searchFileTypes: [...ALL_FILE_TYPES] }),
 
   toggleFileIncluded: (fileId) => {
     set((state) => {
