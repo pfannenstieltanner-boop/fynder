@@ -9,6 +9,14 @@ export type FileType = 'pdf' | 'docx' | 'text' | 'markdown' | 'tiff';
 export type Theme = 'dark' | 'light';
 
 export interface FileSource {
+  /** Unique per folder *pick*, not per real-world folder — generated fresh each time a root
+   *  folder is chosen or dropped (see ChooseFilesModal's FolderRoot / DropZone's drop handler).
+   *  This is what the file tree groups by, so two folders that happen to share a name (picked
+   *  from different locations) render as separate trees instead of merging into one. It cannot
+   *  be used to recognize "the same real folder added again in a later session" — the File
+   *  System Access API exposes no stable path/identity across sessions, only rootName does
+   *  (imprecisely), which is why saved source sets still match on rootName, not this. */
+  rootId: string;
   rootName: string;
   relativePath: string;
 }

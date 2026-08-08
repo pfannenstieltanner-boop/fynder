@@ -329,6 +329,13 @@ button {
   border-color: var(--danger-border);
 }
 
+/* Only set when this file currently has at least one search match to jump to — clicking a row
+   with no matches is a deliberate no-op, so it keeps the default cursor instead of implying
+   there's somewhere to go. */
+.file-row--clickable {
+  cursor: pointer;
+}
+
 /* Mirrors .filetype-chip--muted's opacity — a file whose type isn't among the selected search
    chips is deemphasized here, not hidden; it's still loaded and removable, just not searched. */
 .file-row--type-excluded {
@@ -439,6 +446,95 @@ button {
 
 .file-row:hover .file-row__remove {
   display: block;
+}
+
+.sidebar__group-heading {
+  padding: 4px 6px;
+  font: 600 10px -apple-system, sans-serif;
+  color: var(--text-faint);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.folder-node {
+  display: flex;
+  flex-direction: column;
+}
+
+.folder-node__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+}
+
+.folder-node__row:hover {
+  background: var(--bg-hover);
+}
+
+.folder-node__toggle {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.folder-node__chevron {
+  transition: transform 0.1s ease;
+}
+
+.folder-node__chevron--open {
+  transform: rotate(90deg);
+}
+
+.folder-node__icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.folder-node__name {
+  font: 600 12px -apple-system, sans-serif;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.folder-node__remove {
+  display: none;
+  font: 600 11px -apple-system, sans-serif;
+  color: var(--danger-fg);
+  flex-shrink: 0;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.folder-node__row:hover .folder-node__remove {
+  display: block;
+}
+
+.folder-node__children {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .batch-warning {

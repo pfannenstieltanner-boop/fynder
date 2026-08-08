@@ -346,7 +346,7 @@ export default function ChooseFilesModal({
         try {
           candidates.push({
             file: await item.handle.getFile(),
-            source: { rootName: item.rootName, relativePath: item.relativePath },
+            source: { rootId: item.rootId, rootName: item.rootName, relativePath: item.relativePath },
           });
         } catch {
           unavailable++;

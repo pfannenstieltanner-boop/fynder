@@ -30,14 +30,25 @@ function formatMeta(file: FileRecord): string {
   return formatSize(file.size);
 }
 
+// `firstMatchPageNumber`/`firstMatchIndex` are passed as flat primitives, not a nested object —
+// an ancestor recomputes them from the live search results on every search, and a freshly
+// constructed object literal would defeat this component's own `memo()` every time even when the
+// actual values hadn't changed for this particular file.
+interface FileRowProps {
+  fileId: string;
+  firstMatchPageNumber?: number;
+  firstMatchIndex?: number;
+}
+
 // Takes only an id and selects its own record, so extracting a page from one file
 // re-renders that file's row alone rather than every row in the list. `memo` stops the
 // parent's own re-renders (progress percentage ticking over) from cascading here.
-export default memo(function FileRow({ fileId }: { fileId: string }) {
+export default memo(function FileRow({ fileId, firstMatchPageNumber, firstMatchIndex }: FileRowProps) {
   const file = useAppStore((s) => s.files[fileId]);
   const removeFile = useAppStore((s) => s.removeFile);
   const toggleFileIncluded = useAppStore((s) => s.toggleFileIncluded);
   const searchFileTypes = useAppStore((s) => s.searchFileTypes);
+  const openPreview = useAppStore((s) => s.openPreview);
   if (!file) return null;
 
   const dotTitle = (file.status === 'failed' || file.status === 'partial') && file.error
@@ -46,13 +57,23 @@ export default memo(function FileRow({ fileId }: { fileId: string }) {
   // Grayed out, not hidden — the file-type chips filter what's *searched*, not what's loaded, so
   // an excluded file stays visible (and removable) in the tree, just visually deemphasized.
   const typeExcluded = !searchFileTypes.includes(file.fileType);
+  // Undefined when this file has no current search matches (no search running, filtered out by a
+  // file-type chip, or genuinely no hits) — clicking the row is then a deliberate no-op rather
+  // than jumping to a preview that doesn't exist.
+  const hasInstance = firstMatchPageNumber !== undefined && firstMatchIndex !== undefined;
 
   return (
-    <li className={`file-row${typeExcluded ? ' file-row--type-excluded' : ''}`}>
+    <li
+      className={`file-row${typeExcluded ? ' file-row--type-excluded' : ''}${hasInstance ? ' file-row--clickable' : ''}`}
+      onClick={() => {
+        if (hasInstance) openPreview(file.id, firstMatchPageNumber, firstMatchIndex);
+      }}
+    >
       <input
         type="checkbox"
         className="file-row__checkbox"
         checked={file.includedInSearch}
+        onClick={(e) => e.stopPropagation()}
         onChange={() => toggleFileIncluded(file.id)}
         aria-label={`${file.includedInSearch ? 'Exclude' : 'Include'} ${file.name} in search`}
       />

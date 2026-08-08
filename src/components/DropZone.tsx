@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { importFiles } from '../lib/files/importFiles';
 import ChooseFilesModal from './ChooseFilesModal';
+import type { ImportFileCandidate } from '../types';
 
 const ACCEPT =
   '.pdf,application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.txt,text/plain,.md,.markdown,text/markdown,.tif,.tiff,image/tiff';
@@ -26,20 +27,46 @@ function readFileEntry(entry: FileSystemFileEntry): Promise<File> {
 }
 
 // Walks a dropped entry — a plain file, or a folder to recurse into — collecting every File it
-// contains. Unsupported files are left in; importFiles() already filters those out the same way
-// it does for a flat drag-and-drop, so a dropped folder behaves exactly like dropping its
-// contents individually would.
-async function collectFilesFromEntry(entry: FileSystemEntry): Promise<File[]> {
+// contains, tagged with the same {rootId, rootName, relativePath} shape the Choose-files folder
+// search attaches, so a dropped folder shows up in the sidebar's file tree the same way. `rootId`
+// is generated once, the moment recursion first enters a directory, so two folders dropped in the
+// same or different gestures that happen to share a name still land as distinct tree roots.
+// `rootName` (and `rootId`) stay null until that happens — a file dropped loose (not inside a
+// folder) keeps no source at all, same as one added via the individual picker. Unsupported files
+// are left in; importFiles() already filters those out the same way it does for a flat
+// drag-and-drop, so a dropped folder behaves exactly like dropping its contents individually
+// would, just grouped.
+async function collectCandidatesFromEntry(
+  entry: FileSystemEntry,
+  rootId: string | null,
+  rootName: string | null,
+  relativePath: string,
+): Promise<ImportFileCandidate[]> {
   if (entry.isFile) {
     try {
-      return [await readFileEntry(entry as FileSystemFileEntry)];
+      const file = await readFileEntry(entry as FileSystemFileEntry);
+      return [{ file, source: rootId && rootName ? { rootId, rootName, relativePath } : undefined }];
     } catch {
       return [];
     }
   }
   if (entry.isDirectory) {
     const children = await readAllDirectoryEntries((entry as FileSystemDirectoryEntry).createReader());
-    const nested = await Promise.all(children.map(collectFilesFromEntry));
+    // Resolved once per directory, before recursing — crypto.randomUUID() inline inside the
+    // .map() below would instead mint a *different* id for every child, since each child's call
+    // would evaluate `rootId ?? crypto.randomUUID()` independently.
+    const childRootId = rootId ?? crypto.randomUUID();
+    const childRootName = rootName ?? entry.name;
+    const nested = await Promise.all(
+      children.map((child) =>
+        collectCandidatesFromEntry(
+          child,
+          childRootId,
+          childRootName,
+          relativePath ? `${relativePath}/${child.name}` : child.name,
+        ),
+      ),
+    );
     return nested.flat();
   }
   return [];
@@ -53,9 +80,9 @@ export default function DropZone() {
   const [duplicateSkippedCount, setDuplicateSkippedCount] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
 
-  const handleFiles = useCallback((files: File[]) => {
-    if (files.length === 0) return;
-    const report = importFiles(files.map((file) => ({ file })));
+  const handleFiles = useCallback((candidates: ImportFileCandidate[]) => {
+    if (candidates.length === 0) return;
+    const report = importFiles(candidates);
     setSkippedDocCount(report.legacyDocCount);
     setSkippedCount(report.unsupportedCount);
     setLimitSkippedCount(report.limitRejectedCount);
@@ -86,9 +113,11 @@ export default function DropZone() {
           : [];
 
         if (entries.length > 0) {
-          void Promise.all(entries.map(collectFilesFromEntry)).then((groups) => handleFiles(groups.flat()));
+          void Promise.all(entries.map((entry) => collectCandidatesFromEntry(entry, null, null, ''))).then(
+            (groups) => handleFiles(groups.flat()),
+          );
         } else {
-          handleFiles(Array.from(e.dataTransfer.files));
+          handleFiles(Array.from(e.dataTransfer.files, (file) => ({ file })));
         }
       }}
     >

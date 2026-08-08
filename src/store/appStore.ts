@@ -23,6 +23,7 @@ const PREVIEW_MIN = 260;
 const PREVIEW_MAX = 900;
 const PREVIEW_DEFAULT = 400;
 const THEME_STORAGE_KEY = 'fynder:theme';
+const COLLAPSED_FOLDERS_KEY = 'fynder:collapsedFolders';
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -72,6 +73,29 @@ function saveTheme(theme: Theme): void {
   }
 }
 
+// Keyed by folder path (see FolderNode's `key`), which is stable across a session and across
+// sessions that happen to reuse the same folder names — not tied to any particular file's id, so
+// collapse state naturally carries over if the same folder structure is loaded again later.
+function loadCollapsedFolders(): Record<string, true> {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_FOLDERS_KEY);
+    if (!raw) throw new Error('no stored value');
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') return parsed as Record<string, true>;
+    throw new Error('invalid stored value');
+  } catch {
+    return {};
+  }
+}
+
+function saveCollapsedFolders(collapsed: Record<string, true>): void {
+  try {
+    localStorage.setItem(COLLAPSED_FOLDERS_KEY, JSON.stringify(collapsed));
+  } catch {
+    // localStorage may be unavailable — persistence is a nice-to-have.
+  }
+}
+
 // Applied at module-load time (before the app renders) rather than in a React effect, so the
 // correct theme is in place for the very first paint instead of flashing dark-then-light.
 const initialTheme = loadTheme();
@@ -99,8 +123,14 @@ interface AppStore {
   sidebarWidth: number;
   previewWidth: number;
   theme: Theme;
+  /** Folders collapsed in the sidebar's file tree, keyed by FolderNode.key. Presence = collapsed;
+   *  a folder not in here is expanded (the default for one just added). */
+  collapsedFolders: Record<string, true>;
   addFiles: (files: ImportFileCandidate[]) => FileRecord[];
   removeFile: (fileId: string) => void;
+  removeFiles: (fileIds: string[]) => void;
+  setFilesIncluded: (fileIds: string[], included: boolean) => void;
+  toggleFolderExpanded: (folderKey: string) => void;
   setSidebarWidth: (width: number) => void;
   setPreviewWidth: (width: number) => void;
   /** Call once at the end of a resize drag — see the setters below. */
@@ -200,6 +230,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   sidebarWidth: initialPaneWidths.sidebarWidth,
   previewWidth: initialPaneWidths.previewWidth,
   theme: initialTheme,
+  collapsedFolders: loadCollapsedFolders(),
   previewTarget: null,
 
   addFiles: (incoming) => {
@@ -359,19 +390,54 @@ export const useAppStore = create<AppStore>((set, get) => ({
     });
   },
 
-  removeFile: (fileId) => {
-    cancelFileProcessing(fileId);
-    deleteFile(fileId);
-    evictPreviewCaches(fileId);
-    evictFileScan(fileId);
+  // Sets (not toggles) every listed file to the same includedInSearch value in one update — the
+  // file tree's folder checkbox needs "make everything underneath match this" rather than N
+  // independent toggles, which could flip some files the wrong way if they didn't all start out
+  // in the same state (the mixed/indeterminate case).
+  setFilesIncluded: (fileIds, included) => {
     set((state) => {
-      if (!(fileId in state.files)) return state;
+      let files = state.files;
+      let changed = false;
+      for (const id of fileIds) {
+        const existing = files[id];
+        if (!existing || existing.includedInSearch === included) continue;
+        if (!changed) {
+          files = { ...files };
+          changed = true;
+        }
+        files[id] = { ...existing, includedInSearch: included };
+      }
+      return changed ? { files } : state;
+    });
+  },
+
+  removeFile: (fileId) => get().removeFiles([fileId]),
+
+  // The folder tree's Remove button deletes every file nested under it at once — batched into a
+  // single set() rather than looping removeFile(), which would otherwise re-filter fileOrder and
+  // re-copy `files` once per file.
+  removeFiles: (fileIds) => {
+    for (const id of fileIds) {
+      cancelFileProcessing(id);
+      deleteFile(id);
+      evictPreviewCaches(id);
+      evictFileScan(id);
+    }
+    set((state) => {
+      const idSet = new Set(fileIds);
       const files = { ...state.files };
-      delete files[fileId];
+      let removedAny = false;
+      for (const id of fileIds) {
+        if (id in files) {
+          delete files[id];
+          removedAny = true;
+        }
+      }
+      if (!removedAny) return state;
       return {
         files,
-        fileOrder: state.fileOrder.filter((id) => id !== fileId),
-        previewTarget: state.previewTarget?.fileId === fileId ? null : state.previewTarget,
+        fileOrder: state.fileOrder.filter((id) => !idSet.has(id)),
+        previewTarget: state.previewTarget && idSet.has(state.previewTarget.fileId) ? null : state.previewTarget,
       };
     });
   },
@@ -404,4 +470,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   openPreview: (fileId, pageNumber, matchIndex = 0) => set({ previewTarget: { fileId, pageNumber, matchIndex } }),
   closePreview: () => set({ previewTarget: null }),
+
+  toggleFolderExpanded: (folderKey) => {
+    set((state) => {
+      const next = { ...state.collapsedFolders };
+      if (next[folderKey]) delete next[folderKey];
+      else next[folderKey] = true;
+      saveCollapsedFolders(next);
+      return { collapsedFolders: next };
+    });
+  },
 }));

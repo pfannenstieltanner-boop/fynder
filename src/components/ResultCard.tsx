@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FileSearchResult } from '../types';
 import { useAppStore } from '../store/appStore';
 import MatchSnippet from './MatchSnippet';
@@ -7,16 +7,21 @@ export default function ResultCard({ result }: { result: FileSearchResult }) {
   const previewTarget = useAppStore((s) => s.previewTarget);
   const openPreview = useAppStore((s) => s.openPreview);
   const [expanded, setExpanded] = useState(false);
+  const cardRef = useRef<HTMLLIElement>(null);
 
   const isSelected = previewTarget?.fileId === result.fileId;
   const isMulti = result.totalMatches > 1;
 
-  // Auto-expands whenever this card *becomes* the selected file — e.g. cycling here via Enter, or
-  // the preview footer's Prev/Next file buttons — so its instances are visible without an extra
-  // click. Keyed on the isSelected transition rather than running every render so a user can still
-  // manually collapse an already-selected card without this immediately reopening it.
+  // Whenever this card *becomes* the selected file — clicking it here, cycling here via Enter,
+  // the preview footer's Prev/Next file buttons, or clicking the file in the sidebar tree — it
+  // auto-expands and scrolls into view, so its instances are visible without an extra click or
+  // hunting for it in a long results list. Keyed on the isSelected transition rather than running
+  // every render so a user can still manually collapse an already-selected card without this
+  // immediately reopening it, and so re-clicking the same already-open card doesn't re-scroll it.
   useEffect(() => {
-    if (isSelected && isMulti) setExpanded(true);
+    if (!isSelected) return;
+    if (isMulti) setExpanded(true);
+    cardRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [isSelected, isMulti]);
 
   const handleCardClick = () => {
@@ -26,7 +31,7 @@ export default function ResultCard({ result }: { result: FileSearchResult }) {
   };
 
   return (
-    <li className={`result-card${isSelected ? ' result-card--selected' : ''}`}>
+    <li ref={cardRef} className={`result-card${isSelected ? ' result-card--selected' : ''}`}>
       <div
         className="result-card__body"
         role="button"
