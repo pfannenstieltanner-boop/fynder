@@ -52,6 +52,17 @@ DropZone → appStore.addFiles → processingManager.processFiles
 and OCR paths: a page needs ≥10 characters and ≥3 alphanumeric words to be
 trusted as having a real text layer.
 
+`DropZone` also accepts dropped folders, not just loose files: it walks
+`DataTransferItem.webkitGetAsEntry()` recursively (`FileSystemDirectoryEntry
+.createReader().readEntries()`, paged since Chrome caps ~100 per call) and feeds
+the results into the same `addFiles` path. `webkitGetAsEntry()` must be called
+synchronously in the drop handler, before any `await` — the item list isn't
+guaranteed valid past that task, though the `FileSystemEntry` objects it returns
+stay usable for the async walk that follows. The Choose-files modal's own
+recursive folder search (`lib/files/directoryDiscovery.ts`) is a separate,
+File-System-Access-API-based path with its own picker UI; both funnel into
+`lib/files/importFiles.ts`.
+
 ## Worker pools
 
 Five processing pools plus disposable search workers. Processing-pool sizes come from
@@ -132,6 +143,50 @@ cache should call `registerPreviewCache` rather than being wired into the store.
 Theme is applied to `document.documentElement.dataset.theme` at module load,
 before React mounts, to avoid a flash of the wrong theme.
 
+### File tree
+
+The sidebar groups files into a folder tree via `lib/files/fileTree.ts`
+(`buildFileTree`), built from each `FileRecord.source` — not from `fileOrder`
+alone. Files with no `source` (added via the individual picker, or a loose
+file drop) render under a plain "Other Files" heading instead, since there's
+no folder to nest them under.
+
+`FileSource.rootId` is unique per folder *pick* (`crypto.randomUUID()`,
+minted once when a folder is chosen or dropped), not per folder name —
+grouping by name alone let two different folders that happen to share a
+display name (e.g. "Documents" picked from two locations) silently merge
+their files into one tree node. Two consequences worth knowing before
+touching this:
+
+- Genuine sibling subfolders sharing a name inside *one* real folder pick
+  (`Root/A/Docs` and `Root/B/Docs`) were never actually broken — tree
+  construction only matches a name among the same parent's existing
+  children, and an OS can't have two identically-named folders in one real
+  directory anyway. `rootId` only fixes the root-level case.
+- Because `rootId` is fresh per pick, re-picking the *same* physical folder
+  in a later session shows as a second, identically-named root node rather
+  than merging into the first. File-level duplicate detection (name + size +
+  `lastModified`, in `importFiles.ts`) still stops any actual duplicate file
+  from being re-added, so this is cosmetic, not a data problem — and
+  unfixable without a stable cross-session folder identity, which the File
+  System Access API doesn't expose.
+
+Saved source sets (`lib/files/savedSourceSets.ts`) deliberately still match
+on `rootName` + `relativePath`, not `rootId` — a saved set must survive being
+reconnected in a brand-new session where a brand-new `rootId` is necessarily
+minted, so `rootId` can't be used there.
+
+`Sidebar` selects the whole `s.files` map to build the tree (grouping needs
+every file's `source`/`name`) — an accepted, deliberate exception to the
+narrow-selector rule above, since `MAX_LIVE_FILES` (100) bounds the rebuild
+cost to something trivial; `FileRow`'s own `memo()` still keeps the actual
+per-row DOM from re-rendering unnecessarily. Where a value derived from
+search results needs to reach deep into the tree (e.g. which file to jump to
+on click), pass it down as **flat primitive props**, not a nested object —
+`FileSearchResult` objects are freshly constructed on every search run even
+when the underlying scan is cache-hit, so an object prop would defeat
+`memo()` every time regardless of whether the values actually changed.
+
 ## Search
 
 `SearchProvider` (`contexts/SearchContext.tsx`) is the single owner of both the
@@ -154,6 +209,31 @@ than throwing.
 Caps, in `lib/search/constants.ts`: exactly 500 retained total matches, 50
 displayed occurrences per file, and a 60-character snippet radius. `findMatches`
 accepts an exact caller-supplied cap and guards against zero-length-match loops.
+
+Plain mode supports multiple terms: pressing Tab in the search box commits the
+current text as a chip and starts the next one; an Any/All toggle
+(`searchTermsMode`) controls whether a file must contain every term or just
+one. Regex mode has no chips — it's always exactly one term (one regex can
+already express any combination). Internally, `buildSearchRegex`/`searchFiles`/
+the search worker take `terms: string[]` + a combine mode rather than a single
+query string. `buildSearchRegex` returns a combined "any" regex (used to find
+and highlight every match, in *both* combine modes — once a file qualifies,
+every term's hits are shown) plus one regex per term, used only for the "all"
+mode's admission test (a file must match every term regex *somewhere* to be
+admitted at all; `searchFiles` runs that cheap presence check before paying for
+a full scan). `DocxPreview` independently re-derives matches against the
+rendered DOM (see below) using the same `terms`/`combineMode` from
+`useSearch()`, so its ordinal matching stays consistent with the results list.
+
+File-type chips (`searchFileTypes` in the store) gate `searchableFiles` before
+anything is searched. Selection has non-obvious "All" semantics: by default
+every type is selected and shown as one "All" chip rather than N individually
+active ones. Clicking a specific type while "All" is active is an *exclusive*
+pick (`searchFileTypes` becomes `[thatType]`, not "all minus one"); from a
+custom selection, further clicks toggle normally, and removing the last
+selected type falls back to "All" rather than leaving zero types selected
+(which would silently return no results). The sidebar grays out files whose
+type isn't in the current selection rather than hiding them.
 
 ## Safety limits
 
@@ -194,6 +274,27 @@ position back from the DOM, dividing out the current zoom first.
 PDF and TIFF draw highlights onto an overlay canvas stacked over the page raster.
 DOCX and text preview wrap matches in real `<mark>` elements.
 
+`focusRect`'s target zoom is scaled by `FOCUS_ZOOM_MULTIPLIER` (2/3, in
+`useZoomPan.ts`) rather than zooming all the way to `TARGET_MATCH_HEIGHT_PX` —
+a deliberately less aggressive auto-zoom-to-match. It's a one-constant change
+if the multiplier needs tuning.
+
+`PreviewShell` listens for Enter on the **capture** phase
+(`{capture: true}`/`true` third arg), not bubble, to cycle to the next search
+instance (rolling into the next file once the current one's occurrences are
+exhausted, wrapping after the last file). This has to be capture: each result
+card and occurrence row is a `role="button"` div with its own Enter handler
+that calls `stopPropagation()`, so a bubble-phase listener never sees the
+keydown once one of those rows has focus. The handler deliberately does *not*
+try to distinguish "focus is on the row that's currently active" from "focus
+is on some other row" — after the first Enter moves `previewTarget` elsewhere,
+DOM focus doesn't move with it (React keeps the same node for that row), so
+any check tied to the focused row's own active-state would only ever let the
+first press through. It only bails out for genuine editable/interactive focus
+(input/textarea/select/button/contenteditable) — tabbing to a specific,
+not-yet-selected occurrence row and pressing Enter therefore cycles rather
+than selecting that row directly; Space still selects it.
+
 ## Conventions
 
 - TypeScript strict. No `any` in application code; the few casts around pdf.js
@@ -220,3 +321,11 @@ queue — do not act on these unless asked.
   zoom would fix it. Also not `devicePixelRatio`-aware.
 - **`DocxExtractionPool` duplicates `ExtractionPool`** almost entirely; it
   predates that class being generalized over a worker factory.
+- **`ChooseFilesModal`'s own `ALL_TYPES` constant duplicates
+  `lib/files/fileTypes.ts`'s `ALL_FILE_TYPES`** rather than importing it —
+  the two lists can drift; a new file type added to only one won't show up
+  in the other's UI.
+- **Re-picking the same physical folder in a later session** (see File tree,
+  above) adds a second, identically-named root node instead of merging into
+  the existing one. Cosmetic only — no duplicate files result — but confusing
+  to look at. No fix available without a stable cross-session folder identity.
