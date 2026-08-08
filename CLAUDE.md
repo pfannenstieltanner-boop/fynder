@@ -197,18 +197,56 @@ from the preview overlay. User patterns execute only in disposable search
 workers with a five-second termination timeout; never execute them on the UI
 thread.
 
-`lib/search/searchFiles.ts` caps retained results while scanning, so even one
-file cannot exceed `MAX_TOTAL_MATCHES`. Search results include per-page match
-ranges; PDF, TIFF, and text previews consume those ranges instead of evaluating
-patterns again. DOCX rendered-DOM matching uses the same worker boundary.
+`lib/search/searchFiles.ts` reports each file's real, uncapped total match
+count and every match's position (`FileSearchResult.matchesByPage`).
+`MAX_TOTAL_MATCHES` (`lib/search/constants.ts`) is `Infinity` — there used to
+be a 500-match ceiling here, and a separate 50-per-file cap on how many
+*display* occurrences were built; both were removed on request. `findMatches`
+still accepts an exact caller-supplied cap and guards against zero-length-match
+loops independently of it, so an unbounded call (`Infinity`) can't hang on a
+pathological zero-width regex. PDF, TIFF, and text previews consume
+`matchesByPage` ranges directly instead of evaluating patterns again. DOCX
+rendered-DOM matching uses the same worker boundary.
+
+`FileSearchResult` deliberately carries no snippet text — no `primarySnippet`,
+no pre-built occurrence list. Building display snippets for potentially
+unbounded matches up front doesn't scale, so that work moved client-side and
+lazy: `OccurrenceList` (the results column's bottom panel) flattens
+`matchesByPage` into one ordinal list (`lib/search/matchLocations.ts`'s
+`flattenMatchLocations()` — reading order, pages ascending), paginates it in
+chunks of `RESULTS_PAGE_SIZE` (50), and only calls `buildSnippet()` (reading
+the matching `FileRecord`'s raw page text from the store) for the chunk
+currently shown. A numbered pager sits at the bottom of the panel
+(`lib/pagination.ts`'s `buildPageWindow()` — page 1, the last page, and a
+±2 window around the current page, with an ellipsis token for any gap); it
+auto-jumps to whichever chunk holds the active match on file switch or
+cycling, and clicking a page number also opens the preview to that chunk's
+first match. This *replaced* an earlier per-document-page-grouped design
+(collapsible "Page N ▾" rows) — the pager paginates the flat *results* list,
+unrelated to the document's own page numbers, which was a real
+back-and-forth: read the "Search" and "Previews" history in git log /
+PR discussion if this area needs touching again, since the obvious-looking
+"group by document page" design was explicitly rejected in favor of this.
+
+Since navigation (`PreviewShell`'s Enter-cycling and Prev/Next-match footer
+buttons) used to read off the old capped occurrence list too, it now reads
+`flattenMatchLocations()` / `firstMatchLocation()` directly — so
+keyboard/footer cycling can always reach every match, independent of
+`OccurrenceList`'s own pagination state.
+
+The results column itself is two independently-scrollable panels, not one
+list: a `results-grid` of compact `ResultCard`s (filename + count only, no
+inline expansion) above, and `OccurrenceList` below showing whichever file is
+currently selected (`previewTarget.fileId`). Selecting a different file
+doesn't reflow the card grid, and cycling through instances doesn't require
+re-finding the right card's dropdown — the two were deliberately decoupled.
 
 `buildSearchRegex` escapes the query in `plain` mode and passes it through in
 `regex` mode, always `gi`. Invalid user regexes surface as `regexError` rather
 than throwing.
 
-Caps, in `lib/search/constants.ts`: exactly 500 retained total matches, 50
-displayed occurrences per file, and a 60-character snippet radius. `findMatches`
-accepts an exact caller-supplied cap and guards against zero-length-match loops.
+The one remaining cap, in `lib/search/constants.ts`: a 60-character snippet
+radius (`SNIPPET_RADIUS`).
 
 Plain mode supports multiple terms: pressing Tab in the search box commits the
 current text as a chip and starts the next one; an Any/All toggle

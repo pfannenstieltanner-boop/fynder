@@ -2,6 +2,7 @@ import { useAppStore } from '../store/appStore';
 import { useSearch } from '../contexts/SearchContext';
 import { ALL_FILE_TYPES, FILE_TYPE_LABELS } from '../lib/files/fileTypes';
 import ResultCard from './ResultCard';
+import OccurrenceList from './OccurrenceList';
 
 function describeTerms(terms: string[], combineMode: 'any' | 'all'): string {
   if (terms.length === 1) return `"${terms[0]}"`;
@@ -23,9 +24,11 @@ export default function ResultsColumn() {
   const toggleSearchFileType = useAppStore((s) => s.toggleSearchFileType);
   const setAllSearchFileTypes = useAppStore((s) => s.setAllSearchFileTypes);
   const fileOrder = useAppStore((s) => s.fileOrder);
+  const previewTarget = useAppStore((s) => s.previewTarget);
   const { terms, results, totalMatches, truncated, regexError, searching, combineMode } = useSearch();
 
   const allTypesSelected = searchFileTypes.length === ALL_FILE_TYPES.length;
+  const selectedResult = results.find((result) => result.fileId === previewTarget?.fileId);
 
   const isRegex = searchMode === 'regex';
   const hasFiles = fileOrder.length > 0;
@@ -136,18 +139,23 @@ export default function ResultsColumn() {
       ) : results.length === 0 ? (
         <p className="results-hint">No matches found for {describeTerms(terms, combineMode)}.</p>
       ) : (
-        <>
-          <p className="results-summary">
-            {totalMatches} match{totalMatches === 1 ? '' : 'es'} across {results.length} file
-            {results.length === 1 ? '' : 's'}
-            {truncated && ' — showing the first 500 matches; refine your search'}
-          </p>
-          <ul className="results-list">
-            {results.map((result) => (
-              <ResultCard key={result.fileId} result={result} />
-            ))}
-          </ul>
-        </>
+        <div className="results-panels">
+          <div className="results-panel results-panel--cards">
+            <p className="results-summary">
+              {totalMatches} match{totalMatches === 1 ? '' : 'es'} across {results.length} file
+              {results.length === 1 ? '' : 's'}
+              {truncated && ' — showing the first 500 matches; refine your search'}
+            </p>
+            <ul className="results-grid">
+              {results.map((result) => (
+                <ResultCard key={result.fileId} result={result} />
+              ))}
+            </ul>
+          </div>
+          <div className="results-panel results-panel--occurrences">
+            <OccurrenceList result={selectedResult} />
+          </div>
+        </div>
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useSearch } from '../contexts/SearchContext';
 import { buildFileTree } from '../lib/files/fileTree';
+import { firstMatchLocation } from '../lib/search/matchLocations';
 import DropZone from './DropZone';
 import FileRow from './FileRow';
 import FolderNode, { type InstanceLocation } from './FolderNode';
@@ -37,7 +38,7 @@ export default function Sidebar({ width }: { width: number }) {
   const instancesByFileId = useMemo(() => {
     const map = new Map<string, InstanceLocation>();
     for (const result of results) {
-      const first = result.occurrences[0];
+      const first = firstMatchLocation(result.matchesByPage);
       if (first) map.set(result.fileId, { pageNumber: first.pageNumber, matchIndex: first.matchIndexInPage });
     }
     return map;
