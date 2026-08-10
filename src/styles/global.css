@@ -854,15 +854,13 @@ button {
   margin-right: 6px;
 }
 
-/* Keeps the matched word roughly centered in the row instead of just ellipsizing from the end,
-   which on a narrow pane could clip the match itself out of view. Both sides get equal flex
-   space around the (never-truncated) match, and each independently overflows toward its own
-   outer edge — .occurrence-row__before truncates from its *start* (the classic CSS-only
-   start-ellipsis trick: flip to rtl so the browser's own end-ellipsis lands visually on the
-   left), .occurrence-row__after truncates normally from its end — so whichever side has room
-   keeps text right up against the match either way. */
-.occurrence-row__before,
-.occurrence-row__after {
+/* The text preceding the match is capped to a fixed word count in JS (see LEADING_WORD_COUNT in
+   OccurrenceList.tsx), not truncated here — so the match reliably sits a short, predictable
+   distance in from the left regardless of pane width. That leaves only the trailing side to
+   truncate as the pane narrows, which is what this is: standard single-line end-ellipsis, no
+   bidi tricks required. (An earlier version tried to keep the match dead-center via a CSS
+   start-ellipsis/direction:rtl trick on the leading side — abandoned as unreliable in practice.) */
+.occurrence-row__text {
   flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
@@ -870,14 +868,7 @@ button {
   text-overflow: ellipsis;
 }
 
-.occurrence-row__before {
-  direction: rtl;
-  text-align: left;
-}
-
 .occurrence-row mark {
-  flex-shrink: 0;
-  white-space: nowrap;
   background: none;
   color: var(--amber);
   font-weight: 700;

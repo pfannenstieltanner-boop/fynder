@@ -245,8 +245,18 @@ re-finding the right card's dropdown — the two were deliberately decoupled.
 `regex` mode, always `gi`. Invalid user regexes surface as `regexError` rather
 than throwing.
 
-The one remaining cap, in `lib/search/constants.ts`: a 60-character snippet
-radius (`SNIPPET_RADIUS`).
+In `OccurrenceList`, the match is deliberately *not* kept dead-center — an
+earlier attempt at that via a CSS start-ellipsis (`direction: rtl`) trick on
+the leading side was abandoned as unreliable in practice (the ellipsis
+rendered on the wrong side, right next to the match). Instead,
+`snippetFormatting.ts`'s `limitLeadingWords()` caps the text before a match
+to a fixed word count (`LEADING_WORD_COUNT`), independent of pane width, so
+the match lands a short, predictable distance in from the left. The trailing
+side is left free to run and is simply clipped by ordinary CSS
+`text-overflow: ellipsis` as the pane narrows — for that to actually reach
+and fill the row instead of stopping short with its own embedded "…" and
+leaving visible empty space, `SNIPPET_RADIUS` (`lib/search/constants.ts`) is
+deliberately generous (800 characters) rather than a tight cap.
 
 Plain mode supports multiple terms: pressing Tab in the search box commits the
 current text as a chip and starts the next one; an Any/All toggle
