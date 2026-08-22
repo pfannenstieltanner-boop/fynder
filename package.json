@@ -8,7 +8,10 @@
     "build": "node node_modules/typescript/bin/tsc -b && node node_modules/vite/bin/vite.js build",
     "preview": "node node_modules/vite/bin/vite.js preview",
     "typecheck": "node node_modules/typescript/bin/tsc -b --noEmit",
-    "test": "node node_modules/vitest/vitest.mjs run"
+    "test": "node node_modules/vitest/vitest.mjs run",
+    "tauri": "node node_modules/@tauri-apps/cli/tauri.js",
+    "tauri:dev": "node node_modules/@tauri-apps/cli/tauri.js dev",
+    "tauri:build": "node node_modules/@tauri-apps/cli/tauri.js build"
   },
   "dependencies": {
     "docx-preview": "^0.4.0",
@@ -21,6 +24,8 @@
     "zustand": "^4.5.5"
   },
   "devDependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^6.0.5",
