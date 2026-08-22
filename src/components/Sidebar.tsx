@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useSearch } from '../contexts/SearchContext';
-import { buildFileTree } from '../lib/files/fileTree';
+import { buildFileTree, filterTreeToFileIds } from '../lib/files/fileTree';
 import { firstMatchLocation } from '../lib/search/matchLocations';
 import DropZone from './DropZone';
 import FileRow from './FileRow';
@@ -34,15 +34,29 @@ export default function Sidebar({ width }: { width: number }) {
   // know, per file, whether it currently has any. Computed once here (the results list already
   // only lists files with at least one match) and threaded down as flat primitives per row, not
   // subscribed to independently in every FileRow — see FileRow's own note on why.
-  const { results } = useSearch();
+  const { results, terms } = useSearch();
+  const searchActive = terms.length > 0;
   const instancesByFileId = useMemo(() => {
     const map = new Map<string, InstanceLocation>();
     for (const result of results) {
       const first = firstMatchLocation(result.matchesByPage);
-      if (first) map.set(result.fileId, { pageNumber: first.pageNumber, matchIndex: first.matchIndexInPage });
+      if (first) {
+        map.set(result.fileId, {
+          pageNumber: first.pageNumber,
+          matchIndex: first.matchIndexInPage,
+          totalMatches: result.totalMatches,
+        });
+      }
     }
     return map;
   }, [results]);
+
+  const showMatchesOnly = useAppStore((s) => s.showMatchesOnly);
+  const toggleShowMatchesOnly = useAppStore((s) => s.toggleShowMatchesOnly);
+  const displayTree = useMemo(() => {
+    if (!showMatchesOnly || !searchActive) return tree;
+    return filterTreeToFileIds(tree, new Set(instancesByFileId.keys()));
+  }, [tree, showMatchesOnly, searchActive, instancesByFileId]);
 
   const total = fileOrder.length;
   const percent = total === 0 ? 0 : Math.round((settledCount / total) * 100);
@@ -68,14 +82,27 @@ export default function Sidebar({ width }: { width: number }) {
         </div>
       ) : (
         <>
-          <p className="sidebar__list-header">
-            {total} FILE{total === 1 ? '' : 'S'} · {percent}%
-          </p>
+          <div className="sidebar__list-header">
+            <span>
+              {total} FILE{total === 1 ? '' : 'S'} · {percent}%
+            </span>
+            {searchActive && (
+              <label className="sidebar__matches-only">
+                <input
+                  type="checkbox"
+                  checked={showMatchesOnly}
+                  onChange={toggleShowMatchesOnly}
+                  aria-label="Show only files and folders with search matches"
+                />
+                Matches only
+              </label>
+            )}
+          </div>
           <ul className="sidebar__list">
-            {tree.otherFileIds.length > 0 && (
+            {displayTree.otherFileIds.length > 0 && (
               <>
                 <li className="sidebar__group-heading">Other Files</li>
-                {tree.otherFileIds.map((id) => {
+                {displayTree.otherFileIds.map((id) => {
                   const instance = instancesByFileId.get(id);
                   return (
                     <FileRow
@@ -88,8 +115,8 @@ export default function Sidebar({ width }: { width: number }) {
                 })}
               </>
             )}
-            {tree.roots.map((root) => (
-              <FolderNode key={root.key} node={root} instancesByFileId={instancesByFileId} />
+            {displayTree.roots.map((root) => (
+              <FolderNode key={root.key} node={root} instancesByFileId={instancesByFileId} searchActive={searchActive} />
             ))}
           </ul>
         </>

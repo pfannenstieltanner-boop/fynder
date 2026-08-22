@@ -126,11 +126,16 @@ interface AppStore {
   /** Folders collapsed in the sidebar's file tree, keyed by FolderNode.key. Presence = collapsed;
    *  a folder not in here is expanded (the default for one just added). */
   collapsedFolders: Record<string, true>;
+  /** Sidebar tree filter: when true and a search is active, folders/files with no current match
+   *  are pruned from the tree entirely rather than just left unmarked. Not persisted — it's a
+   *  view of the current search, not a standing preference. */
+  showMatchesOnly: boolean;
   addFiles: (files: ImportFileCandidate[]) => FileRecord[];
   removeFile: (fileId: string) => void;
   removeFiles: (fileIds: string[]) => void;
   setFilesIncluded: (fileIds: string[], included: boolean) => void;
   toggleFolderExpanded: (folderKey: string) => void;
+  toggleShowMatchesOnly: () => void;
   setSidebarWidth: (width: number) => void;
   setPreviewWidth: (width: number) => void;
   /** Call once at the end of a resize drag — see the setters below. */
@@ -231,6 +236,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   previewWidth: initialPaneWidths.previewWidth,
   theme: initialTheme,
   collapsedFolders: loadCollapsedFolders(),
+  showMatchesOnly: false,
   previewTarget: null,
 
   addFiles: (incoming) => {
@@ -480,4 +486,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return { collapsedFolders: next };
     });
   },
+
+  toggleShowMatchesOnly: () => set((state) => ({ showMatchesOnly: !state.showMatchesOnly })),
 }));

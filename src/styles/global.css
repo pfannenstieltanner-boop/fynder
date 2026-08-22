@@ -290,6 +290,10 @@ button {
 }
 
 .sidebar__list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 0 16px;
   font: 600 10px -apple-system, sans-serif;
   color: var(--text-faint);
@@ -297,6 +301,25 @@ button {
   text-transform: uppercase;
   margin-bottom: 8px;
   flex-shrink: 0;
+}
+
+.sidebar__matches-only {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.sidebar__matches-only input {
+  width: 11px;
+  height: 11px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .sidebar__list {
@@ -506,6 +529,24 @@ button {
   text-overflow: ellipsis;
   color: var(--text-primary);
   cursor: pointer;
+}
+
+.folder-node__match-badge {
+  font: 700 9px var(--font-mono);
+  color: var(--text-muted);
+  background: var(--bg-hover);
+  padding: 2px 5px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.folder-node__match-badge--none {
+  opacity: 0.5;
+}
+
+.folder-node__row:hover .folder-node__match-badge {
+  display: none;
 }
 
 .folder-node__remove {
@@ -724,6 +765,10 @@ button {
   overflow: hidden;
 }
 
+.results-panels--resizing {
+  user-select: none;
+}
+
 .results-panel {
   min-height: 0;
   overflow-y: auto;
@@ -732,12 +777,44 @@ button {
 }
 
 .results-panel--cards {
-  flex: 1;
-  border-bottom: 1px solid var(--border-default);
+  flex: 0 0 var(--cards-panel-height, 25%);
+  min-height: 120px;
 }
 
 .results-panel--occurrences {
-  flex: 3;
+  flex: 1 1 0;
+  min-height: 160px;
+}
+
+/* The visual divider doubles as the draggable split between the file result cards and the
+   selected file's word instances. Its wider hit target makes the control easy to grab without
+   wasting vertical space. */
+.results-panel-resizer {
+  position: relative;
+  z-index: 1;
+  height: 9px;
+  flex: 0 0 9px;
+  cursor: row-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.results-panel-resizer::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: var(--resize-idle);
+  transition: background-color 120ms ease, height 120ms ease, top 120ms ease;
+}
+
+.results-panel-resizer:hover::before,
+.results-panel-resizer:focus-visible::before {
+  top: 3px;
+  height: 3px;
+  background: var(--resize-hover);
 }
 
 .results-summary {
