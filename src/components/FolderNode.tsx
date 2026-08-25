@@ -7,6 +7,7 @@ import FileRow from './FileRow';
 export interface InstanceLocation {
   pageNumber: number;
   matchIndex: number;
+  totalMatches: number;
 }
 
 type IncludedAggregate = 'all' | 'none' | 'mixed';
@@ -31,12 +32,17 @@ function computeIncludedAggregate(files: Record<string, FileRecord>, fileIds: st
 const FolderNode = memo(function FolderNode({
   node,
   instancesByFileId,
+  searchActive,
 }: {
   node: FolderNodeData;
   /** Where to jump to for each file that currently has search matches — keyed by file id, absent
    *  for files with none. Threaded down from Sidebar (which owns the one `useSearch()` call this
    *  whole tree needs) rather than each row subscribing to the search context itself. */
   instancesByFileId: Map<string, InstanceLocation>;
+  /** Whether a search is currently running at all — distinguishes "0 files match" (render the
+   *  rollup badge) from "no search" (don't), since both look identical from `instancesByFileId`
+   *  alone. */
+  searchActive: boolean;
 }) {
   const collapsed = useAppStore((s) => !!s.collapsedFolders[node.key]);
   const toggleFolderExpanded = useAppStore((s) => s.toggleFolderExpanded);
@@ -54,6 +60,21 @@ const FolderNode = memo(function FolderNode({
   useEffect(() => {
     if (checkboxRef.current) checkboxRef.current.indeterminate = aggregate === 'mixed';
   }, [aggregate]);
+
+  // Rollup so a folder's match state is legible without expanding it — the whole point of this
+  // feature is to replace manually opening every subfolder to see which files have hits.
+  const matchStats = useMemo(() => {
+    if (!searchActive) return null;
+    let matchingFiles = 0;
+    let totalMatches = 0;
+    for (const id of descendantFileIds) {
+      const instance = instancesByFileId.get(id);
+      if (!instance) continue;
+      matchingFiles++;
+      totalMatches += instance.totalMatches;
+    }
+    return { matchingFiles, totalFiles: descendantFileIds.length, totalMatches };
+  }, [searchActive, descendantFileIds, instancesByFileId]);
 
   return (
     <li className="folder-node">
@@ -94,6 +115,14 @@ const FolderNode = memo(function FolderNode({
         <span className="folder-node__name" title={node.name} onClick={() => toggleFolderExpanded(node.key)}>
           {node.name}
         </span>
+        {matchStats && (
+          <span
+            className={`folder-node__match-badge${matchStats.matchingFiles === 0 ? ' folder-node__match-badge--none' : ''}`}
+            title={`${matchStats.matchingFiles} of ${matchStats.totalFiles} files match · ${matchStats.totalMatches} total match${matchStats.totalMatches === 1 ? '' : 'es'}`}
+          >
+            {matchStats.matchingFiles}/{matchStats.totalFiles} · {matchStats.totalMatches}
+          </span>
+        )}
         <button
           type="button"
           className="folder-node__remove"
@@ -114,7 +143,7 @@ const FolderNode = memo(function FolderNode({
       {!collapsed && (
         <ul className="folder-node__children">
           {node.children.map((child) => (
-            <FolderNode key={child.key} node={child} instancesByFileId={instancesByFileId} />
+            <FolderNode key={child.key} node={child} instancesByFileId={instancesByFileId} searchActive={searchActive} />
           ))}
           {node.fileIds.map((id) => {
             const instance = instancesByFileId.get(id);

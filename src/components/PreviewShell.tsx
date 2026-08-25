@@ -1,6 +1,7 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useMemo } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useSearch } from '../contexts/SearchContext';
+import { firstMatchLocation, flattenMatchLocations } from '../lib/search/matchLocations';
 import TextPreview from './TextPreview';
 import type { FileRecord } from '../types';
 import PreviewErrorBoundary from './PreviewErrorBoundary';
@@ -27,20 +28,26 @@ export default function PreviewShell({
 
   const resultIndex = results.findIndex((r) => r.fileId === previewTarget.fileId);
   const currentResult = resultIndex >= 0 ? results[resultIndex] : null;
-  const occurrences = currentResult?.occurrences ?? [];
-  const occurrenceIndex = occurrences.findIndex(
-    (o) => o.pageNumber === previewTarget.pageNumber && o.matchIndexInPage === previewTarget.matchIndex,
+  // Every match, not a capped display list — see matchLocations.ts. Keyed on matchesByPage
+  // specifically (stable across re-renders when a cache-hit scan is reused), not on `currentResult`
+  // itself (a fresh object every search), so this doesn't rebuild more than the data actually did.
+  const matchLocations = useMemo(
+    () => (currentResult ? flattenMatchLocations(currentResult.matchesByPage) : []),
+    [currentResult?.matchesByPage],
+  );
+  const matchIndex = matchLocations.findIndex(
+    (loc) => loc.pageNumber === previewTarget.pageNumber && loc.matchIndexInPage === previewTarget.matchIndex,
   );
 
-  const hasMatchNav = !!currentResult && occurrenceIndex >= 0;
+  const hasMatchNav = !!currentResult && matchIndex >= 0;
   const hasFileNav = results.length > 1;
 
   function stepMatch(delta: number) {
-    if (!currentResult || occurrenceIndex < 0) return;
-    const total = occurrences.length;
-    const next = (occurrenceIndex + delta + total) % total;
-    const occ = occurrences[next];
-    openPreview(currentResult.fileId, occ.pageNumber, occ.matchIndexInPage);
+    if (!currentResult || matchIndex < 0) return;
+    const total = matchLocations.length;
+    const next = (matchIndex + delta + total) % total;
+    const loc = matchLocations[next];
+    openPreview(currentResult.fileId, loc.pageNumber, loc.matchIndexInPage);
   }
 
   function stepFile(delta: number) {
@@ -49,18 +56,20 @@ export default function PreviewShell({
     const total = results.length;
     const next = (baseIndex + delta + total) % total;
     const target = results[next];
-    const first = target.occurrences[0];
+    const first = firstMatchLocation(target.matchesByPage);
     if (first) openPreview(target.fileId, first.pageNumber, first.matchIndexInPage);
   }
 
   // Enter advances to the next instance in the Instance list (this results column), not just the
-  // next match within the current file — once the current file's last shown occurrence is
-  // reached, it rolls into the next file's first occurrence, wrapping back to the first file
-  // after the last. Repeated presses must keep advancing every time, so this deliberately does
-  // *not* try to tell "focus is still sitting on the row that was active a moment ago" apart from
-  // "focus is on some other row" — after the first press moves the active instance elsewhere,
-  // focus itself doesn't move (React keeps the same DOM node for that row), so any check tied to
-  // that row's now-stale active state would only ever let the very first Enter through.
+  // next match within the current file — once the current file's last match is reached, it rolls
+  // into the next file's first match, wrapping back to the first file after the last. Walks every
+  // match via matchLocations, not a capped display list, so it can always reach every instance no
+  // matter how many there are. Repeated presses must keep advancing every time, so this
+  // deliberately does *not* try to tell "focus is still sitting on the row that was active a
+  // moment ago" apart from "focus is on some other row" — after the first press moves the active
+  // instance elsewhere, focus itself doesn't move (React keeps the same DOM node for that row), so
+  // any check tied to that row's now-stale active state would only ever let the very first Enter
+  // through.
   //
   // Registered on the *capture* phase, not bubble: a result card and each occurrence row are
   // themselves `role="button"` divs with their own Enter handler (select-this-row) that calls
@@ -70,7 +79,7 @@ export default function PreviewShell({
   // now-stale occurrence it captured.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key !== 'Enter' || !currentResult || occurrenceIndex < 0) return;
+      if (e.key !== 'Enter' || !currentResult || matchIndex < 0) return;
       const active = document.activeElement;
       if (active instanceof HTMLElement) {
         const tag = active.tagName;
@@ -81,20 +90,20 @@ export default function PreviewShell({
 
       e.preventDefault();
       e.stopPropagation();
-      if (occurrenceIndex + 1 < occurrences.length) {
-        const occ = occurrences[occurrenceIndex + 1];
-        openPreview(currentResult.fileId, occ.pageNumber, occ.matchIndexInPage);
+      if (matchIndex + 1 < matchLocations.length) {
+        const loc = matchLocations[matchIndex + 1];
+        openPreview(currentResult.fileId, loc.pageNumber, loc.matchIndexInPage);
         return;
       }
       if (results.length === 0) return;
       const nextFileIndex = (resultIndex + 1) % results.length;
       const nextResult = results[nextFileIndex];
-      const first = nextResult.occurrences[0];
+      const first = firstMatchLocation(nextResult.matchesByPage);
       if (first) openPreview(nextResult.fileId, first.pageNumber, first.matchIndexInPage);
     }
     document.addEventListener('keydown', handleKeyDown, true);
     return () => document.removeEventListener('keydown', handleKeyDown, true);
-  }, [currentResult, occurrenceIndex, occurrences, results, resultIndex, openPreview]);
+  }, [currentResult, matchIndex, matchLocations, results, resultIndex, openPreview]);
 
   return (
     <div className="preview-pane" style={{ width }}>
@@ -129,8 +138,7 @@ export default function PreviewShell({
                 ‹
               </button>
               <span className="preview-footer__label">
-                Match {occurrenceIndex + 1} of {occurrences.length}
-                {currentResult!.occurrencesTruncated ? ' shown' : ''}
+                Match {matchIndex + 1} of {matchLocations.length}
               </span>
               <button
                 type="button"

@@ -5,6 +5,7 @@ import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { isPageTextSufficient, OCR_RENDER_SCALE } from '../lib/pdf/constants';
 import type { WordBox } from '../types';
 import { MAX_DOCUMENT_PAGES, isPageSizeAllowed } from '../lib/files/limits';
+import { wordBoxFromPdfTextItem } from '../lib/pdf/textBoxGeometry';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
@@ -66,7 +67,7 @@ self.onmessage = async (e: MessageEvent<ProcessMessage>) => {
         const text = items.map((item) => (item as TextItem).str ?? '').join(' ');
 
         if (isPageTextSufficient(text)) {
-          const boxes = buildWordBoxes(page, items);
+          const boxes = buildWordBoxes(page, items, content.styles);
           post({ type: 'page', fileId, pageNumber, text, boxes });
         } else {
           const blob = await rasterizePage(page);
@@ -82,23 +83,15 @@ self.onmessage = async (e: MessageEvent<ProcessMessage>) => {
   }
 };
 
-function buildWordBoxes(page: PDFPageProxy, items: Array<TextItem | { str?: undefined }>): WordBox[] {
+function buildWordBoxes(
+  page: PDFPageProxy,
+  items: Array<TextItem | { str?: undefined }>,
+  styles: Record<string, { vertical: boolean }>,
+): WordBox[] {
   const viewport = page.getViewport({ scale: 1 });
   return items.map((rawItem) => {
     const item = rawItem as TextItem;
-    if (!item.str) {
-      return { text: '', x0: 0, y0: 0, x1: 0, y1: 0 };
-    }
-    const x0 = item.transform[4];
-    const y0 = item.transform[5];
-    const rect = viewport.convertToViewportRectangle([x0, y0, x0 + item.width, y0 + item.height]);
-    return {
-      text: item.str,
-      x0: Math.min(rect[0], rect[2]),
-      y0: Math.min(rect[1], rect[3]),
-      x1: Math.max(rect[0], rect[2]),
-      y1: Math.max(rect[1], rect[3]),
-    };
+    return wordBoxFromPdfTextItem(item, viewport.transform, styles[item.fontName]?.vertical ?? false);
   });
 }
 

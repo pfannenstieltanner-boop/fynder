@@ -27,16 +27,14 @@ describe('findMatches', () => {
 });
 
 describe('searchFiles', () => {
-  it('caps a single file at 500 matches and reports truncation', () => {
+  it('does not cap total matches — every match is retained in matchesByPage', () => {
     const input = file('one', 'x '.repeat(600));
     const outcome = searchFiles({ one: input }, ['one'], ['x'], 'plain', 'any', /x/gi, [/x/gi]);
 
-    expect(outcome.totalMatches).toBe(500);
-    expect(outcome.truncated).toBe(true);
-    expect(outcome.results[0].totalMatches).toBe(500);
-    expect(outcome.results[0].occurrences).toHaveLength(50);
-    expect(outcome.results[0].occurrencesTruncated).toBe(true);
-    expect(outcome.results[0].matchesByPage[1]).toHaveLength(500);
+    expect(outcome.totalMatches).toBe(600);
+    expect(outcome.truncated).toBe(false);
+    expect(outcome.results[0].totalMatches).toBe(600);
+    expect(outcome.results[0].matchesByPage[1]).toHaveLength(600);
   });
 
   it('searches partially processed files alongside done ones, each keeping its own full count', () => {
@@ -66,15 +64,15 @@ describe('searchFiles', () => {
     expect(bResult.totalMatches).toBe(495);
   });
 
-  it('stops admitting further files once the running total reaches the cap, without trimming any already-admitted file', () => {
+  it('admits every matching file regardless of how large the running total gets', () => {
     const a = file('a', 'x '.repeat(300));
     const b = file('b', 'x '.repeat(300));
     const c = file('c', 'x '.repeat(10));
     const outcome = searchFiles({ a, b, c }, ['a', 'b', 'c'], ['x'], 'plain', 'any', /x/gi, [/x/gi]);
 
-    expect(outcome.results.map((r) => r.fileId)).toEqual(['a', 'b']);
-    expect(outcome.results.map((r) => r.totalMatches)).toEqual([300, 300]);
-    expect(outcome.truncated).toBe(true);
+    expect(outcome.results.map((r) => r.fileId)).toEqual(['a', 'b', 'c']);
+    expect(outcome.results.map((r) => r.totalMatches)).toEqual([300, 300, 10]);
+    expect(outcome.truncated).toBe(false);
   });
 
   it('"all" combine mode only admits files containing every term, but highlights every term once admitted', () => {

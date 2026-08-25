@@ -72,3 +72,21 @@ export function collectDescendantFileIds(node: FolderNode): string[] {
   for (const child of node.children) ids.push(...collectDescendantFileIds(child));
   return ids;
 }
+
+/** Prunes a tree down to only the files in `keep` (plus any folder that still has a kept
+ *  descendant after pruning) — used for the sidebar's "matches only" view. Folders left with
+ *  nothing underneath are dropped entirely rather than shown empty. */
+export function filterTreeToFileIds(tree: FileTree, keep: Set<string>): FileTree {
+  function filterNode(node: FolderNode): FolderNode | null {
+    const fileIds = node.fileIds.filter((id) => keep.has(id));
+    const children = node.children
+      .map(filterNode)
+      .filter((child): child is FolderNode => child !== null);
+    if (fileIds.length === 0 && children.length === 0) return null;
+    return { ...node, fileIds, children };
+  }
+
+  const roots = tree.roots.map(filterNode).filter((node): node is FolderNode => node !== null);
+  const otherFileIds = tree.otherFileIds.filter((id) => keep.has(id));
+  return { roots, otherFileIds };
+}

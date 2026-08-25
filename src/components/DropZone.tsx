@@ -1,10 +1,14 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { importFiles } from '../lib/files/importFiles';
 import ChooseFilesModal from './ChooseFilesModal';
 import type { ImportFileCandidate } from '../types';
 
 const ACCEPT =
   '.pdf,application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.txt,text/plain,.md,.markdown,text/markdown,.tif,.tiff,image/tiff';
+
+// Keep the advanced folder-search modal available in the codebase, but leave it off while the
+// simpler native Windows file picker is the primary "Choose files" workflow.
+const ENABLE_ADVANCED_CHOOSE_FILES_MODAL = false;
 
 function readDirectoryEntries(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
   return new Promise((resolve, reject) => reader.readEntries(resolve, reject));
@@ -79,6 +83,7 @@ export default function DropZone() {
   const [limitSkippedCount, setLimitSkippedCount] = useState(0);
   const [duplicateSkippedCount, setDuplicateSkippedCount] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = useCallback((candidates: ImportFileCandidate[]) => {
     if (candidates.length === 0) return;
@@ -122,10 +127,34 @@ export default function DropZone() {
       }}
     >
       <p className="sidebar__dropzone-text">Drag files or folders, or</p>
-      <button type="button" className="sidebar__dropzone-link" onClick={() => setModalOpen(true)}>
+      <button
+        type="button"
+        className="sidebar__dropzone-link"
+        onClick={() => {
+          if (ENABLE_ADVANCED_CHOOSE_FILES_MODAL) {
+            setModalOpen(true);
+          } else {
+            fileInputRef.current?.click();
+          }
+        }}
+      >
         Choose files
       </button>
-      <ChooseFilesModal open={modalOpen} onClose={() => setModalOpen(false)} accept={ACCEPT} />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={ACCEPT}
+        multiple
+        hidden
+        onChange={(event) => {
+          handleFiles(Array.from(event.target.files ?? [], (file) => ({ file })));
+          // Allows selecting the same file again after it has been removed from Fynder.
+          event.target.value = '';
+        }}
+      />
+      {ENABLE_ADVANCED_CHOOSE_FILES_MODAL && (
+        <ChooseFilesModal open={modalOpen} onClose={() => setModalOpen(false)} accept={ACCEPT} />
+      )}
       {skippedCount > 0 && (
         <p className="sidebar__dropzone-warning">
           Skipped {skippedCount} unsupported file{skippedCount === 1 ? '' : 's'}.

@@ -1,88 +1,91 @@
 # Fynder
 
-Client-side batch document search. Drop in PDFs, DOCX files, TIFFs, or plain
-text/Markdown — Fynder extracts their text (OCR'ing scanned pages automatically),
-searches across all of them at once, and shows every hit highlighted in place in
-a live preview.
+Fynder is a private, browser-based document search tool for finding terms across batches of PDFs, TIFFs, Word documents, text files, and Markdown files. It extracts text locally, searches every selected file together, and highlights each result in its document preview.
 
 **[Try it live →](https://fynder-smoky.vercel.app/)**
 
-## Why
+Document contents stay in the browser: Fynder has no application server and does not upload files for processing.
 
-Everything runs entirely in your browser. Nothing is uploaded anywhere — there's
-no server, no account, and no network request involved in processing your
-documents. It's built for searching through a batch of files (contracts, scanned
-forms, reports, whatever) without shipping their contents off your machine.
+## What it does
 
-## Features
+- Search across many documents with plain-text or regular-expression queries.
+- Search one or more terms using **Any** or **All** matching.
+- Preview each result in place and move between occurrences.
+- Read text-layer PDFs directly and OCR scanned PDFs/TIFFs locally.
+- Import individual files, drag-and-drop files or folders, and organize imported folder contents in a sidebar tree.
+- Filter the search by file type or include/exclude individual files.
 
-- **Batch search across mixed file types** — PDF, DOCX, TIFF, TXT, and Markdown,
-  all searched together.
-- **OCR for scanned documents** — pages with no real text layer are recognized
-  automatically (via Tesseract, running in the browser).
-- **Plain-text or regex search**, with support for multiple search terms:
-  press <kbd>Tab</kbd> to add another term, and choose whether a file must match
-  *all* of them or just *one*.
-- **File-type filter chips** to narrow which loaded files are actually searched.
-- **Folder-aware import** — drag and drop a whole folder (subfolders included),
-  or use the recursive folder-search picker to filter by folder/file name and
-  file type before importing. Reusable "source sets" let you save a
-  folder + filter combination and re-run it later.
-- **Folder tree view** in the sidebar mirrors your real folder structure, with
-  per-file and per-folder include/exclude toggles.
-- **Live, highlighted previews** for every match, with zoom/pan, keyboard
-  cycling through instances (<kbd>Enter</kbd>), and jump-to-file navigation.
-- **Dark and light themes.**
+## Supported file types
+
+| Type | Extensions | Processing |
+| --- | --- | --- |
+| PDF | `.pdf` | Text extraction; OCR when a usable text layer is absent |
+| TIFF | `.tif`, `.tiff` | Local OCR |
+| Word | `.docx` | Text extraction and document preview |
+| Text | `.txt` | Direct text extraction |
+| Markdown | `.md`, `.markdown` | Direct text extraction |
+
+Legacy `.doc` files are not supported. Save them as `.docx` before importing.
 
 ## Getting started
 
-Requires Node.js (18+ recommended).
+1. Install a current Node.js LTS release.
+2. Clone this repository.
+3. Install dependencies:
 
-```bash
-git clone https://github.com/pfannenstieltanner-boop/fynder.git
-cd fynder
-npm install
-npm run dev
+   ```bash
+   npm install
+   ```
+
+4. Start the development server:
+
+   ```bash
+   npm run dev
+   ```
+
+5. Open the local address shown in the terminal.
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the development server |
+| `npm test` | Run the regression test suite |
+| `npm run typecheck` | Validate TypeScript types |
+| `npm run build` | Create a production build in `dist/` |
+| `npm run preview` | Serve the production build locally |
+
+## Privacy and security
+
+Fynder is designed for local-only document processing:
+
+- Files are processed in the browser and are not uploaded by the application.
+- PDF, TIFF, and OCR work runs in background workers to keep the interface responsive.
+- OCR runtime assets are self-hosted under `public/tesseract/`.
+- A content-security policy prevents imported document content from opening frames, running scripts, or making outbound requests.
+
+## Operating limits
+
+To keep browser memory use predictable, Fynder currently enforces these limits:
+
+- 100 MB per file and 200 MB per loaded session
+- 100 simultaneously loaded files
+- 2,000 pages per document
+- TIFF/PDF source pages up to 40 million pixels and 20,000 pixels on either side
+
+Large TIFFs are downscaled for OCR once their longest side exceeds 3,500 pixels. See the in-app error message if a source image exceeds the safety limits.
+
+## Project structure
+
+```text
+src/
+  components/  User interface and document previews
+  contexts/    Shared search state
+  lib/         File import, search, OCR, preview, and safety helpers
+  store/       Application state
+  workers/     PDF, TIFF, DOCX, and search background workers
+public/
+  tesseract/   Self-hosted OCR runtime assets
 ```
 
-Then open the printed `localhost` URL. That's it — no environment variables,
-no backend, no accounts.
-
-### Scripts
-
-| Command | Does |
-|---|---|
-| `npm run dev` | Start the Vite dev server |
-| `npm run build` | Type-check, then build a production bundle to `dist/` |
-| `npm run preview` | Serve the production build locally |
-| `npm run typecheck` | Type-check without emitting |
-| `npm test` | Run the Vitest suite |
-
-## Supported files & limits
-
-PDF, DOCX, TIFF, TXT, and Markdown are supported (legacy `.doc` is not — save as
-`.docx` first). To keep a browser tab responsive, a session is capped at 100 MB
-per file, 200 MB total, and 100 files loaded at once.
-
-## Browser support
-
-Built for current Chromium-based desktop browsers (Chrome, Edge). Recursive
-folder import uses the File System Access API, which isn't available everywhere
-— browsers without it fall back to selecting individual files instead of whole
-folders. The app must run in a secure context (`https://`, or `localhost` in
-development).
-
-## Privacy
-
-A strict content security policy prevents document content from opening frames,
-running injected scripts, or making outbound network connections. Files, their
-extracted text, and OCR results never leave your machine and exist only for the
-current browser session — nothing is persisted to a server because there isn't
-one.
-
-## Development
-
-This project is developed with the help of an AI coding agent. [`CLAUDE.md`](./CLAUDE.md)
-documents the architecture, processing pipeline, worker pool design, and a
-number of non-obvious implementation details and known trade-offs — read it
-before making significant changes.
+For implementation details, conventions, and architecture notes, see [CLAUDE.md](CLAUDE.md).

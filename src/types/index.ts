@@ -77,20 +77,14 @@ export interface MatchRange {
   end: number;
 }
 
-export interface ResultOccurrence {
-  pageNumber: number;
-  matchIndexInPage: number;
-  segments: MatchSegment[];
-}
-
 export interface FileSearchResult {
   fileId: string;
   fileName: string;
   fileType: FileType;
   totalMatches: number;
-  primarySnippet: MatchSegment[];
-  /** Capped list for display — see occurrencesTruncated when totalMatches exceeds this list's length. */
-  occurrences: ResultOccurrence[];
-  occurrencesTruncated: boolean;
+  /** Every match's position, grouped by page — uncapped. Snippet text for display is built
+   *  lazily client-side (see OccurrenceList, buildSnippet) from these ranges plus the file's raw
+   *  page text, rather than eagerly here, so an arbitrarily large match count costs nothing until
+   *  the user actually expands a given page. */
   matchesByPage: Record<number, MatchRange[]>;
 }
