@@ -2,6 +2,8 @@
 
 Fynder is a private, browser-based document search tool for finding terms across batches of PDFs, TIFFs, Word documents, text files, and Markdown files. It extracts text locally, searches every selected file together, and highlights each result in its document preview.
 
+**[Try it live →](https://fynder-smoky.vercel.app/)**
+
 Document contents stay in the browser: Fynder has no application server and does not upload files for processing.
 
 ## What it does
