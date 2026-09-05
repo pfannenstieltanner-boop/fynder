@@ -15,6 +15,24 @@ import { evictPreviewCaches } from '../lib/previewCaches';
 import { evictFileScan } from '../lib/search/searchFiles';
 import { cancelFileProcessing } from '../lib/processingCancellation';
 
+export type ReplaceJobKind = 'text' | 'images';
+export type ReplaceJobStatus = 'queued' | 'running' | 'done' | 'failed' | 'skipped' | 'cancelled';
+
+export interface ReplaceJobRecord {
+  id: string;
+  /** Groups every job launched by one "Start" click in a Replace modal. */
+  batchId: string;
+  sourceFileId: string;
+  sourceFileName: string;
+  kind: ReplaceJobKind;
+  status: ReplaceJobStatus;
+  outputFileName: string;
+  resultBlob?: Blob;
+  matchCount?: number;
+  skippedCount?: number;
+  error?: string;
+}
+
 const PANE_STORAGE_KEY = 'fynder:paneWidths';
 const SIDEBAR_MIN = 170;
 const SIDEBAR_MAX = 640;
@@ -163,6 +181,21 @@ interface AppStore {
   previewTarget: { fileId: string; pageNumber: number; matchIndex: number } | null;
   openPreview: (fileId: string, pageNumber: number, matchIndex?: number) => void;
   closePreview: () => void;
+  /** Batch Replace Text / Replace Images jobs. Modals select `Object.values(replaceJobs).filter(j
+   *  => j.batchId === currentBatchId)` — bounded to one batch (≤MAX_LIVE_FILES), the same
+   *  documented-exception shape Sidebar already uses for `s.files`. There is deliberately no
+   *  modal-open boolean anywhere in this store — that stays local useState in DocumentMenu,
+   *  matching the existing ChooseFilesModal/DropZone convention. */
+  replaceJobs: Record<string, ReplaceJobRecord>;
+  startReplaceBatch: (
+    batchId: string,
+    jobs: Array<{ id: string; sourceFileId: string; sourceFileName: string; kind: ReplaceJobKind; outputFileName: string }>,
+  ) => void;
+  updateReplaceJobRunning: (jobId: string) => void;
+  completeReplaceJob: (jobId: string, patch: { resultBlob: Blob; matchCount: number; skippedCount?: number }) => void;
+  failReplaceJob: (jobId: string, error: string) => void;
+  skipReplaceJob: (jobId: string, reason: string) => void;
+  clearReplaceBatch: (batchId: string) => void;
 }
 
 function createFileRecord(candidate: ImportFileCandidate): FileRecord {
@@ -238,6 +271,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   collapsedFolders: loadCollapsedFolders(),
   showMatchesOnly: false,
   previewTarget: null,
+  replaceJobs: {},
 
   addFiles: (incoming) => {
     const records = incoming.map(createFileRecord);
@@ -488,4 +522,72 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   toggleShowMatchesOnly: () => set((state) => ({ showMatchesOnly: !state.showMatchesOnly })),
+
+  startReplaceBatch: (batchId, jobs) => {
+    set((state) => {
+      const replaceJobs = { ...state.replaceJobs };
+      for (const job of jobs) {
+        replaceJobs[job.id] = {
+          id: job.id,
+          batchId,
+          sourceFileId: job.sourceFileId,
+          sourceFileName: job.sourceFileName,
+          kind: job.kind,
+          status: 'queued',
+          outputFileName: job.outputFileName,
+        };
+      }
+      return { replaceJobs };
+    });
+  },
+
+  updateReplaceJobRunning: (jobId) => {
+    set((state) => {
+      const existing = state.replaceJobs[jobId];
+      if (!existing) return state;
+      return { replaceJobs: { ...state.replaceJobs, [jobId]: { ...existing, status: 'running' } } };
+    });
+  },
+
+  completeReplaceJob: (jobId, patch) => {
+    set((state) => {
+      const existing = state.replaceJobs[jobId];
+      if (!existing) return state;
+      return {
+        replaceJobs: {
+          ...state.replaceJobs,
+          [jobId]: { ...existing, status: 'done', resultBlob: patch.resultBlob, matchCount: patch.matchCount, skippedCount: patch.skippedCount },
+        },
+      };
+    });
+  },
+
+  failReplaceJob: (jobId, error) => {
+    set((state) => {
+      const existing = state.replaceJobs[jobId];
+      if (!existing) return state;
+      return { replaceJobs: { ...state.replaceJobs, [jobId]: { ...existing, status: 'failed', error } } };
+    });
+  },
+
+  skipReplaceJob: (jobId, reason) => {
+    set((state) => {
+      const existing = state.replaceJobs[jobId];
+      if (!existing) return state;
+      return { replaceJobs: { ...state.replaceJobs, [jobId]: { ...existing, status: 'skipped', error: reason } } };
+    });
+  },
+
+  // Called when a Replace modal closes/resets — drops the batch's job records and, crucially,
+  // releases their resultBlob references (each one is a full output DOCX) rather than letting
+  // them accumulate across repeated runs.
+  clearReplaceBatch: (batchId) => {
+    set((state) => {
+      const replaceJobs = { ...state.replaceJobs };
+      for (const [id, job] of Object.entries(replaceJobs)) {
+        if (job.batchId === batchId) delete replaceJobs[id];
+      }
+      return { replaceJobs };
+    });
+  },
 }));

@@ -17,6 +17,16 @@ export const MAX_PREVIEW_RASTER_PIXELS = 150_000_000;
 export const MAX_PREVIEW_RASTER_DIMENSION = 16_384;
 export const MAX_DOCX_ENTRIES = 10_000;
 export const MAX_DOCX_EXPANDED_BYTES = 250 * 1024 * 1024;
+// One shared replacement image per batch (see ReplaceImagesModal) — generous enough for a
+// full-resolution photo without letting an oversized file balloon a batch write.
+export const MAX_REPLACEMENT_IMAGE_BYTES = 25 * 1024 * 1024;
+
+/** Shared zip-bomb guard for any code that expands a DOCX's zip entries, read-only or writing. */
+export function assertDocxSafeToExpand(entryCount: number, expandedBytes: number): void {
+  if (entryCount > MAX_DOCX_ENTRIES || expandedBytes > MAX_DOCX_EXPANDED_BYTES) {
+    throw new Error('Word document exceeds expanded-size safety limits.');
+  }
+}
 
 export function isPageSizeAllowed(width: number, height: number): boolean {
   return (

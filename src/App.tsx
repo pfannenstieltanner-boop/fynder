@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useAppStore } from './store/appStore';
 import { SearchProvider } from './contexts/SearchContext';
+import MenuBar from './components/MenuBar';
 import Sidebar from './components/Sidebar';
 import ResultsColumn from './components/ResultsColumn';
 import PreviewPane from './components/PreviewPane';
@@ -50,44 +51,47 @@ export default function App() {
 
   return (
     <SearchProvider>
-      <div className="app-shell">
-        <Sidebar width={sidebarWidth} />
-        <div
-          className={`resize-handle${resizing === 'sidebar' ? ' resize-handle--active' : ''}`}
-          onMouseDown={startResize('sidebar')}
-          role="separator"
-          aria-label="Resize file sidebar"
-          aria-orientation="vertical"
-          aria-valuemin={170}
-          aria-valuemax={640}
-          aria-valuenow={Math.round(sidebarWidth)}
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-              e.preventDefault();
-              resizeByKeyboard('sidebar', e.key === 'ArrowLeft' ? -10 : 10);
-            }
-          }}
-        />
-        <ResultsColumn />
-        <div
-          className={`resize-handle${resizing === 'preview' ? ' resize-handle--active' : ''}`}
-          onMouseDown={startResize('preview')}
-          role="separator"
-          aria-label="Resize preview pane"
-          aria-orientation="vertical"
-          aria-valuemin={260}
-          aria-valuemax={900}
-          aria-valuenow={Math.round(previewWidth)}
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-              e.preventDefault();
-              resizeByKeyboard('preview', e.key === 'ArrowLeft' ? 10 : -10);
-            }
-          }}
-        />
-        <PreviewPane width={previewWidth} />
+      <div className="app-layout">
+        <MenuBar />
+        <div className="app-shell">
+          <Sidebar width={sidebarWidth} />
+          <div
+            className={`resize-handle${resizing === 'sidebar' ? ' resize-handle--active' : ''}`}
+            onMouseDown={startResize('sidebar')}
+            role="separator"
+            aria-label="Resize file sidebar"
+            aria-orientation="vertical"
+            aria-valuemin={170}
+            aria-valuemax={640}
+            aria-valuenow={Math.round(sidebarWidth)}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                e.preventDefault();
+                resizeByKeyboard('sidebar', e.key === 'ArrowLeft' ? -10 : 10);
+              }
+            }}
+          />
+          <ResultsColumn />
+          <div
+            className={`resize-handle${resizing === 'preview' ? ' resize-handle--active' : ''}`}
+            onMouseDown={startResize('preview')}
+            role="separator"
+            aria-label="Resize preview pane"
+            aria-orientation="vertical"
+            aria-valuemin={260}
+            aria-valuemax={900}
+            aria-valuenow={Math.round(previewWidth)}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                e.preventDefault();
+                resizeByKeyboard('preview', e.key === 'ArrowLeft' ? 10 : -10);
+              }
+            }}
+          />
+          <PreviewPane width={previewWidth} />
+        </div>
       </div>
     </SearchProvider>
   );
