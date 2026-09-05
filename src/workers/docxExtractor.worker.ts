@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import mammoth from 'mammoth/mammoth.browser';
 import JSZip from 'jszip';
-import { MAX_DOCX_ENTRIES, MAX_DOCX_EXPANDED_BYTES } from '../lib/files/limits';
+import { assertDocxSafeToExpand } from '../lib/files/limits';
 
 interface ProcessMessage {
   type: 'process';
@@ -25,9 +25,7 @@ self.onmessage = async (e: MessageEvent<ProcessMessage>) => {
       const data = entry as typeof entry & { _data?: { uncompressedSize?: number } };
       expandedBytes += data._data?.uncompressedSize ?? 0;
     });
-    if (entryCount > MAX_DOCX_ENTRIES || expandedBytes > MAX_DOCX_EXPANDED_BYTES) {
-      throw new Error('Word document exceeds expanded-size safety limits.');
-    }
+    assertDocxSafeToExpand(entryCount, expandedBytes);
     const result = await mammoth.extractRawText({ arrayBuffer });
     post({ type: 'done', fileId, text: result.value });
   } catch (error) {

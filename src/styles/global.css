@@ -141,10 +141,148 @@ button {
 
 /* ---------- App shell (3-pane resizable workspace) ---------- */
 
-.app-shell {
+.app-layout {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
+}
+
+.app-shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ---------- Menu bar ---------- */
+
+.menu-bar {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 8px;
+  background: var(--bg-sidebar);
+  border-bottom: 1px solid var(--border-default);
+}
+
+.menu-bar__item {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.menu-bar__item:hover,
+.menu-bar__item[aria-expanded='true'] {
+  background: var(--bg-hover);
+}
+
+.document-menu {
+  position: relative;
+}
+
+.document-menu__panel {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 20;
+  min-width: 180px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.document-menu__option {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.document-menu__option:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.document-menu__option:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* ---------- Replace Text / Replace Images modals ---------- */
+
+.replace-modal__output {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.replace-modal__output-name {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.image-occurrence-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.image-occurrence-grid__file h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.image-occurrence-grid__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.image-occurrence-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 96px;
+  padding: 6px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--bg-card);
+  cursor: pointer;
+}
+
+.image-occurrence-card input[type='checkbox'] {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+}
+
+.image-occurrence-card__thumb {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  background: var(--bg-input);
+  border-radius: 4px;
+}
+
+.image-occurrence-card__location {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 .resize-handle {
